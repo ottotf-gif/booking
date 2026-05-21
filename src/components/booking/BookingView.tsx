@@ -20,7 +20,7 @@ interface BookingViewProps {
   onBackToLanding?: () => void;
 }
 
-const MIN_LEAD_MINUTES = 30; // Cannot book a time less than 30 minutes from now
+const MIN_LEAD_MINUTES = 30;
 
 export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
   const { profile, user } = useAuth();
@@ -93,7 +93,6 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
       const selectedDateObj = new Date(selectedDate + 'T00:00:00');
       const dayOfWeek = selectedDateObj.getDay();
 
-      // 1) Stylist availability for that weekday (one or more shifts)
       const { data: availabilityRows } = await supabase
         .from('stylist_availability')
         .select('start_time, end_time, is_available')
@@ -106,14 +105,12 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
         end: toMinutes(r.end_time.substring(0, 5)),
       }));
 
-      // If barber doesn't work this day -> no slots
       if (workingRanges.length === 0) {
         setAvailableSlots([]);
         setLoadingSlots(false);
         return;
       }
 
-      // 2) Time off for that date
       const { data: timeOff } = await supabase
         .from('stylist_time_off')
         .select('start_date, end_date')
@@ -127,7 +124,6 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
         return;
       }
 
-      // 3) Blocked time slots
       const { data: blockedSlots } = await supabase
         .from('blocked_time_slots')
         .select('time_slot, day_of_week, stylist_id')
@@ -141,7 +137,6 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
         }
       });
 
-      // 4) Existing appointments
       const { data: existingAppointments } = await supabase
         .from('appointments')
         .select('start_time, end_time')
@@ -154,7 +149,6 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
         end: toMinutes(a.end_time),
       }));
 
-      // 5) Min lead-time (today: now + MIN_LEAD_MINUTES rounded up to 15)
       const today = new Date();
       const todayStr = today.toISOString().split('T')[0];
       let minStartMinutes = -Infinity;
@@ -175,7 +169,6 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
         const slotEnd = m + 15;
         const serviceEnd = m + selectedService.duration_minutes;
 
-        // Must fit entirely inside ONE working range (so lunch gap is excluded)
         const insideRange = workingRanges.some(r => slotStart >= r.start && serviceEnd <= r.end);
         const isBlocked = blockedTimes.has(time);
         const blockTaken = bookedRanges.some(r => slotStart < r.end && slotEnd > r.start);
@@ -190,7 +183,7 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
 
       setAvailableSlots(slots);
     } catch (err) {
-      console.error('Error loading slots:', err);
+      console.error(err);
       setAvailableSlots([]);
     } finally {
       setLoadingSlots(false);
@@ -214,7 +207,6 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
       endTime.setMinutes(endTime.getMinutes() + selectedService.duration_minutes);
       const endTimeStr = `${endTime.getHours().toString().padStart(2, '0')}:${endTime.getMinutes().toString().padStart(2, '0')}`;
 
-      // Re-check for conflicts
       const { data: existingAppointments } = await supabase
         .from('appointments')
         .select('start_time, end_time')
@@ -228,13 +220,11 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
       const hasConflict = (existingAppointments || []).some(a => {
         const [ash, asm] = a.start_time.split(':').map(Number);
         const [aeh, aem] = a.end_time.split(':').map(Number);
-        const aStart = ash * 60 + asm;
-        const aEnd = aeh * 60 + aem;
-        return slotStart < aEnd && slotEnd > aStart;
+        return slotStart < (aeh * 60 + aem) && slotEnd > (ash * 60 + asm);
       });
 
       if (hasConflict) {
-        setBookingError('Den här tiden är inte längre tillgänglig. Välj en annan tid.');
+        setBookingError('Den här tiden är inte längre tillgänglig.');
         setStep('datetime');
         loadAvailableSlots();
         setBooking(false);
@@ -266,10 +256,7 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
       const { error } = await supabase.from('appointments').insert(appointmentData);
       if (error) throw error;
 
-      setConfirmedBooking({
-        service: selectedService, stylist: selectedStylist,
-        date: selectedDate, time: selectedTime,
-      });
+      setConfirmedBooking({ service: selectedService, stylist: selectedStylist, date: selectedDate, time: selectedTime });
       setStep('booked');
       setShowGuestFlow(false);
       setGuestInfo(null);
@@ -285,16 +272,19 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
     setShowGuestFlow(false);
   };
 
-  // Today is now the minimum date (no longer +1)
   const today = new Date();
   const minDateStr = today.toISOString().split('T')[0];
   const maxDate = new Date();
   maxDate.setDate(maxDate.getDate() + 56);
   const maxDateStr = maxDate.toISOString().split('T')[0];
 
+  // When user is not logged in, we render this view WITHOUT the Layout wrapper,
+  // so we need to provide our own page-level container with padding.
+  const isGuestMode = !user;
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className={isGuestMode ? 'min-h-screen bg-slate-50 flex items-center justify-center px-4' : 'flex items-center justify-center h-64'}>
         <div className="text-slate-600">Laddar...</div>
       </div>
     );
@@ -309,16 +299,16 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
     );
   }
 
-  return (
+  const content = (
     <div className="max-w-4xl mx-auto">
-      <div className="flex items-start justify-between mb-6 gap-3">
+      <div className="flex items-start justify-between mb-5 sm:mb-6 gap-3">
         <div className="min-w-0">
           {onBackToLanding && (
             <button
               onClick={onBackToLanding}
-              className="flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900 mb-2"
+              className="flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900 mb-2 -ml-1"
             >
-              <ChevronLeft className="w-4 h-4" /> Tillbaka till start
+              <ChevronLeft className="w-4 h-4" /> Tillbaka
             </button>
           )}
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-1">Boka tid</h1>
@@ -327,7 +317,8 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
         {!user && onShowAuth && (
           <button
             onClick={onShowAuth}
-            className="flex items-center gap-2 px-3 py-2 text-sm border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors flex-shrink-0"
+            className="flex items-center gap-2 px-3 py-2 text-sm border border-slate-300 bg-white rounded-lg hover:bg-slate-50 flex-shrink-0"
+            aria-label="Logga in"
           >
             <LogIn className="w-4 h-4" />
             <span className="hidden sm:inline">Logga in</span>
@@ -335,8 +326,7 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
         )}
       </div>
 
-      {/* Step indicator — mobile-friendly compact version */}
-      <div className="flex items-center justify-center mb-6 sm:mb-8 overflow-x-auto">
+      <div className="flex items-center justify-center mb-5 sm:mb-8 overflow-x-auto">
         <div className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
           {[
             { id: 'service', label: 'Tjänst', done: !!selectedService },
@@ -450,7 +440,7 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
 
           <button
             onClick={() => setStep('service')}
-            className="mt-4 sm:mt-6 flex items-center gap-1 px-2 py-2 text-slate-700 hover:text-slate-900 font-medium text-sm"
+            className="mt-4 sm:mt-6 flex items-center gap-1 px-2 py-2 text-slate-700 hover:text-slate-900 font-medium text-sm -ml-2"
           >
             <ChevronLeft className="w-4 h-4" /> Tillbaka
           </button>
@@ -486,9 +476,7 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
                 <p className="text-slate-600 text-sm py-4 text-center">Laddar lediga tider...</p>
               ) : availableSlots.length === 0 ? (
                 <div className="text-center py-6">
-                  <p className="text-slate-600 text-sm">
-                    Barbern jobbar inte denna dag, eller är ledig.
-                  </p>
+                  <p className="text-slate-600 text-sm">Barbern jobbar inte denna dag, eller är ledig.</p>
                   <p className="text-slate-500 text-xs mt-1">Välj ett annat datum.</p>
                 </div>
               ) : availableSlots.every(s => !s.available) ? (
@@ -500,9 +488,7 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
                   {availableSlots.map((slot) => (
                     <button
                       key={slot.time}
-                      onClick={() => {
-                        if (slot.available) { setSelectedTime(slot.time); setStep('confirm'); }
-                      }}
+                      onClick={() => { if (slot.available) { setSelectedTime(slot.time); setStep('confirm'); } }}
                       disabled={!slot.available}
                       className={`px-2 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                         slot.available
@@ -520,7 +506,7 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
 
           <button
             onClick={() => setStep('stylist')}
-            className="mt-4 flex items-center gap-1 px-2 py-2 text-slate-700 hover:text-slate-900 font-medium text-sm"
+            className="mt-4 flex items-center gap-1 px-2 py-2 text-slate-700 hover:text-slate-900 font-medium text-sm -ml-2"
           >
             <ChevronLeft className="w-4 h-4" /> Tillbaka
           </button>
@@ -554,14 +540,14 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
           <div className="flex gap-3">
             <button
               onClick={() => setStep('datetime')}
-              className="flex-1 px-4 py-3 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors font-medium"
+              className="flex-1 px-4 py-3 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 font-medium"
             >
               Tillbaka
             </button>
             <button
               onClick={handleBooking}
               disabled={booking}
-              className="flex-1 px-4 py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors disabled:opacity-50 font-medium"
+              className="flex-1 px-4 py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50 font-medium"
             >
               {booking ? 'Bokar...' : !user && !guestInfo ? 'Fortsätt' : 'Bekräfta'}
             </button>
@@ -596,7 +582,7 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
               setStep('service'); setSelectedService(null); setSelectedStylist(null);
               setSelectedDate(''); setSelectedTime(''); setConfirmedBooking(null);
             }}
-            className="px-6 py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors font-medium"
+            className="px-6 py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 font-medium"
           >
             Boka en till
           </button>
@@ -604,6 +590,19 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
       )}
     </div>
   );
+
+  // Guest mode: wrap in our own page container with proper padding
+  if (isGuestMode) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
+          {content}
+        </div>
+      </div>
+    );
+  }
+
+  return content;
 }
 
 function Row({ label, value }: { label: string; value: string }) {
