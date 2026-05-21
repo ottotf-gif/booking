@@ -11,13 +11,14 @@ type Appointment = Database['public']['Tables']['appointments']['Row'] & {
   customer: Database['public']['Tables']['profiles']['Row'] | null;
 };
 
-interface RatingWithStylist {
+interface RatingRow {
   id: string;
   salon_rating: number;
   barber_rating: number;
   comment: string | null;
   created_at: string;
   stylist_id: string | null;
+  stylist_name?: string;
 }
 
 const DAY_NAMES = ['Söndag', 'Måndag', 'Tisdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lördag'];
@@ -27,29 +28,21 @@ export function AdminDashboard() {
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [loading, setLoading] = useState(true);
 
-  // Top-level stats
   const [todayCount, setTodayCount] = useState(0);
   const [upcomingCount, setUpcomingCount] = useState(0);
   const [activeStaff, setActiveStaff] = useState(0);
-  const [utilization, setUtilization] = useState(0); // % filled
+  const [utilization, setUtilization] = useState(0);
   const [monthlyBookings, setMonthlyBookings] = useState(0);
 
-  // Stats for the month
   const [hourStats, setHourStats] = useState<{ hour: number; count: number }[]>([]);
   const [dayStats, setDayStats] = useState<{ day: number; count: number }[]>([]);
 
-  // Ratings
-  const [ratings, setRatings] = useState<(RatingWithStylist & { stylist_name?: string })[]>([]);
+  const [ratings, setRatings] = useState<RatingRow[]>([]);
   const [avgSalon, setAvgSalon] = useState(0);
   const [stylistAvgs, setStylistAvgs] = useState<{ stylist_id: string; name: string; avg: number; count: number }[]>([]);
 
-  useEffect(() => {
-    loadDaySchedule();
-  }, [selectedDate]);
-
-  useEffect(() => {
-    loadAllStats();
-  }, []);
+  useEffect(() => { loadDaySchedule(); }, [selectedDate]);
+  useEffect(() => { loadAllStats(); }, []);
 
   const loadDaySchedule = async () => {
     try {
@@ -67,62 +60,44 @@ export function AdminDashboard() {
   const loadAllStats = async () => {
     try {
       const today = new Date().toISOString().split('T')[0];
-
-      // First day of current month
       const now = new Date();
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
       const monthStartStr = monthStart.toISOString().split('T')[0];
-      const monthEndStr = today;
 
-      // 1. Today bookings count
       const { data: todayAppts } = await supabase
-        .from('appointments')
-        .select('id')
-        .eq('appointment_date', today)
-        .neq('status', 'cancelled');
+        .from('appointments').select('id')
+        .eq('appointment_date', today).neq('status', 'cancelled');
       setTodayCount(todayAppts?.length || 0);
 
-      // 2. Upcoming
       const { data: upcomingAppts } = await supabase
-        .from('appointments')
-        .select('id')
-        .gte('appointment_date', today)
-        .neq('status', 'cancelled');
+        .from('appointments').select('id')
+        .gte('appointment_date', today).neq('status', 'cancelled');
       setUpcomingCount(upcomingAppts?.length || 0);
 
-      // 3. Active stylists
       const { data: staff } = await supabase
-        .from('stylists')
-        .select('id, profile:profiles(full_name)')
-        .eq('active', true);
+        .from('stylists').select('id, profile:profiles(full_name)').eq('active', true);
       setActiveStaff(staff?.length || 0);
 
-      // 4. Get all appointments this month for stats
       const { data: monthAppts } = await supabase
         .from('appointments')
         .select('appointment_date, start_time, end_time, status, stylist_id, service:services(duration_minutes)')
-        .gte('appointment_date', monthStartStr)
-        .lte('appointment_date', monthEndStr)
+        .gte('appointment_date', monthStartStr).lte('appointment_date', today)
         .neq('status', 'cancelled');
-
       setMonthlyBookings(monthAppts?.length || 0);
 
-      // 5. Utilization = booked minutes / available minutes this month so far
       const { data: availability } = await supabase
         .from('stylist_availability')
         .select('stylist_id, day_of_week, start_time, end_time, is_available')
         .eq('is_available', true);
 
-      // Calculate available minutes for active stylists from month start to today
       const activeStylistIds = new Set((staff || []).map((s: any) => s.id));
-      const availMap = new Map<string, number>(); // key: stylist_id|day_of_week -> minutes per occurrence
+      const availMap = new Map<string, number>();
       (availability || []).forEach((row: any) => {
         if (!activeStylistIds.has(row.stylist_id)) return;
         const [sh, sm] = row.start_time.split(':').map(Number);
         const [eh, em] = row.end_time.split(':').map(Number);
-        const mins = (eh * 60 + em) - (sh * 60 + sm);
         const key = `${row.stylist_id}|${row.day_of_week}`;
-        availMap.set(key, (availMap.get(key) || 0) + mins);
+        availMap.set(key, (availMap.get(key) || 0) + ((eh*60+em) - (sh*60+sm)));
       });
 
       let availableMinutes = 0;
@@ -130,23 +105,18 @@ export function AdminDashboard() {
       const endCursor = new Date(today);
       while (cursor <= endCursor) {
         const dow = cursor.getDay();
-        activeStylistIds.forEach(sid => {
-          availableMinutes += availMap.get(`${sid}|${dow}`) || 0;
-        });
+        activeStylistIds.forEach(sid => { availableMinutes += availMap.get(`${sid}|${dow}`) || 0; });
         cursor.setDate(cursor.getDate() + 1);
       }
 
-      // Booked minutes
       const bookedMinutes = (monthAppts || []).reduce((sum, a: any) => {
         const dur = a.service?.duration_minutes
           || ((parseInt(a.end_time.substring(0,2))*60+parseInt(a.end_time.substring(3,5))) - (parseInt(a.start_time.substring(0,2))*60+parseInt(a.start_time.substring(3,5))));
         return sum + (dur || 0);
       }, 0);
 
-      const util = availableMinutes > 0 ? Math.round((bookedMinutes / availableMinutes) * 100) : 0;
-      setUtilization(util);
+      setUtilization(availableMinutes > 0 ? Math.round((bookedMinutes / availableMinutes) * 100) : 0);
 
-      // 6. Top hours and days (count of appointments by hour/weekday this month)
       const byHour = new Map<number, number>();
       const byDay = new Map<number, number>();
       (monthAppts || []).forEach((a: any) => {
@@ -157,19 +127,13 @@ export function AdminDashboard() {
       });
 
       const hourArr: { hour: number; count: number }[] = [];
-      for (let h = 8; h <= 20; h++) {
-        hourArr.push({ hour: h, count: byHour.get(h) || 0 });
-      }
+      for (let h = 8; h <= 20; h++) hourArr.push({ hour: h, count: byHour.get(h) || 0 });
       setHourStats(hourArr);
 
       const dayArr: { day: number; count: number }[] = [];
-      // Mon-Sun order (matching how Swedes read it)
-      [1, 2, 3, 4, 5, 6, 0].forEach(d => {
-        dayArr.push({ day: d, count: byDay.get(d) || 0 });
-      });
+      [1, 2, 3, 4, 5, 6, 0].forEach(d => dayArr.push({ day: d, count: byDay.get(d) || 0 }));
       setDayStats(dayArr);
 
-      // 7. Ratings — last 60 days
       const sixtyAgo = new Date(); sixtyAgo.setDate(sixtyAgo.getDate() - 60);
       const { data: rRows } = await supabase
         .from('appointment_ratings')
@@ -177,19 +141,17 @@ export function AdminDashboard() {
         .gte('created_at', sixtyAgo.toISOString())
         .order('created_at', { ascending: false });
 
-      const ratingsList = ((rRows as any) || []).map((r: any) => ({
-        ...r,
-        stylist_name: r.stylist?.profile?.full_name || 'Okänd',
+      const ratingsList: RatingRow[] = ((rRows as any) || []).map((r: any) => ({
+        ...r, stylist_name: r.stylist?.profile?.full_name || 'Okänd',
       }));
       setRatings(ratingsList);
 
       if (ratingsList.length > 0) {
-        setAvgSalon(ratingsList.reduce((s: number, r: any) => s + r.salon_rating, 0) / ratingsList.length);
-
+        setAvgSalon(ratingsList.reduce((s, r) => s + r.salon_rating, 0) / ratingsList.length);
         const perStylist = new Map<string, { name: string; sum: number; count: number }>();
-        ratingsList.forEach((r: any) => {
+        ratingsList.forEach((r) => {
           if (!r.stylist_id) return;
-          const e = perStylist.get(r.stylist_id) || { name: r.stylist_name, sum: 0, count: 0 };
+          const e = perStylist.get(r.stylist_id) || { name: r.stylist_name || '', sum: 0, count: 0 };
           e.sum += r.barber_rating; e.count += 1;
           perStylist.set(r.stylist_id, e);
         });
@@ -198,18 +160,16 @@ export function AdminDashboard() {
         })).sort((a, b) => b.avg - a.avg);
         setStylistAvgs(arr);
       }
-    } catch (e) {
-      console.error('Error loading stats:', e);
-    }
+    } catch (e) { console.error('Error loading stats:', e); }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'confirmed': return 'bg-green-100 text-green-800 border-green-200';
-      case 'pending': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'pending':   return 'bg-yellow-100 text-yellow-800 border-yellow-200';
       case 'completed': return 'bg-blue-100 text-blue-800 border-blue-200';
       case 'cancelled': return 'bg-red-100 text-red-800 border-red-200';
-      default: return 'bg-slate-100 text-slate-800 border-slate-200';
+      default:          return 'bg-slate-100 text-slate-800 border-slate-200';
     }
   };
 
@@ -248,7 +208,72 @@ export function AdminDashboard() {
         />
       </div>
 
-      {/* Stats charts */}
+      {/* === SCHEMA FÖR DAGEN (moved to top) === */}
+      <div className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6 mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <h2 className="text-lg font-semibold text-slate-900">Schema för dagen</h2>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent text-sm"
+          />
+        </div>
+
+        {loading ? (
+          <div className="text-center py-12 text-slate-600">Laddar...</div>
+        ) : appointments.length === 0 ? (
+          <div className="text-center py-12">
+            <CalendarIcon className="w-12 h-12 text-slate-400 mx-auto mb-3" />
+            <p className="text-slate-600">Inga bokningar denna dag</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {Object.keys(grouped).sort().map((hour) => (
+              <div key={hour} className="border-l-4 border-slate-300 pl-4">
+                <div className="text-sm font-semibold text-slate-600 mb-2">
+                  {`${hour.padStart(2, '0')}:00`}
+                </div>
+                <div className="space-y-2">
+                  {grouped[hour].map((apt) => (
+                    <div key={apt.id} className="bg-slate-50 rounded-lg p-3 sm:p-4 border-l-4 border-slate-900">
+                      <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+                        <div>
+                          <span className="font-semibold text-slate-900 text-sm">
+                            {apt.start_time.substring(0,5)} – {apt.end_time.substring(0,5)}
+                          </span>
+                          <span className={`ml-2 px-2 py-0.5 text-xs font-medium rounded-full border ${getStatusColor(apt.status)}`}>
+                            {apt.status}
+                          </span>
+                          <p className="text-sm text-slate-700 font-medium mt-1">
+                            {apt.service?.name || 'Borttagen tjänst'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <span className="text-slate-500 text-xs">Kund</span>
+                          <p className="font-medium text-slate-900">
+                            {apt.is_guest_booking ? (apt.guest_name || 'Gäst') : (apt.customer?.full_name || 'Okänd')}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 text-xs">Barber</span>
+                          <p className="font-medium text-slate-900">
+                            {apt.stylist?.profile?.full_name || 'Okänd'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* === STATISTIK === */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6">
         <div className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6">
           <div className="flex items-center gap-2 mb-4">
@@ -264,8 +289,7 @@ export function AdminDashboard() {
                 const pct = (count / maxHour) * 100;
                 const color = count === 0 ? 'bg-slate-200'
                   : count >= maxHour * 0.7 ? 'bg-green-500'
-                  : count >= maxHour * 0.3 ? 'bg-amber-400'
-                  : 'bg-red-300';
+                  : count >= maxHour * 0.3 ? 'bg-amber-400' : 'bg-red-300';
                 return (
                   <div key={hour} className="flex items-center gap-2 text-sm">
                     <span className="w-10 text-slate-600 font-mono text-xs">{hour.toString().padStart(2, '0')}:00</span>
@@ -299,8 +323,7 @@ export function AdminDashboard() {
                 const pct = (count / maxDay) * 100;
                 const color = count === 0 ? 'bg-slate-200'
                   : count >= maxDay * 0.7 ? 'bg-green-500'
-                  : count >= maxDay * 0.3 ? 'bg-amber-400'
-                  : 'bg-red-300';
+                  : count >= maxDay * 0.3 ? 'bg-amber-400' : 'bg-red-300';
                 return (
                   <div key={day} className="flex items-center gap-2 text-sm">
                     <span className="w-16 sm:w-20 text-slate-600 text-xs sm:text-sm">{DAY_NAMES[day]}</span>
@@ -316,8 +339,8 @@ export function AdminDashboard() {
         </div>
       </div>
 
-      {/* Ratings */}
-      <div className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6 mb-6">
+      {/* === BETYG === */}
+      <div className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6">
         <div className="flex items-center gap-2 mb-4 flex-wrap">
           <Star className="w-5 h-5 text-amber-500 fill-amber-500" />
           <h2 className="font-semibold text-slate-900">Betyg</h2>
@@ -372,73 +395,6 @@ export function AdminDashboard() {
           </>
         )}
       </div>
-
-      {/* Daily schedule */}
-      <div className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-          <h2 className="text-lg font-semibold text-slate-900">Schema för dagen</h2>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent text-sm"
-          />
-        </div>
-
-        {loading ? (
-          <div className="text-center py-12 text-slate-600">Laddar...</div>
-        ) : appointments.length === 0 ? (
-          <div className="text-center py-12">
-            <CalendarIcon className="w-12 h-12 text-slate-400 mx-auto mb-3" />
-            <p className="text-slate-600">Inga bokningar denna dag</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {Object.keys(grouped).sort().map((hour) => (
-              <div key={hour} className="border-l-4 border-slate-300 pl-4">
-                <div className="text-sm font-semibold text-slate-600 mb-2">
-                  {`${hour.padStart(2, '0')}:00`}
-                </div>
-                <div className="space-y-2">
-                  {grouped[hour].map((apt) => (
-                    <div key={apt.id} className="bg-slate-50 rounded-lg p-3 sm:p-4 border-l-4 border-slate-900">
-                      <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
-                        <div>
-                          <span className="font-semibold text-slate-900 text-sm">
-                            {apt.start_time.substring(0,5)} – {apt.end_time.substring(0,5)}
-                          </span>
-                          <span className={`ml-2 px-2 py-0.5 text-xs font-medium rounded-full border ${getStatusColor(apt.status)}`}>
-                            {apt.status}
-                          </span>
-                          <p className="text-sm text-slate-700 font-medium mt-1">
-                            {apt.service?.name || 'Borttagen tjänst'}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-                        <div>
-                          <span className="text-slate-500 text-xs">Kund</span>
-                          <p className="font-medium text-slate-900">
-                            {apt.is_guest_booking
-                              ? (apt.guest_name || 'Gäst')
-                              : (apt.customer?.full_name || 'Okänd')}
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-slate-500 text-xs">Barber</span>
-                          <p className="font-medium text-slate-900">
-                            {apt.stylist?.profile?.full_name || 'Okänd'}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   );
 }
@@ -446,16 +402,12 @@ export function AdminDashboard() {
 function StatCard({
   label, value, icon: Icon, subtitle, highlight,
 }: {
-  label: string;
-  value: number | string;
-  icon: any;
-  subtitle?: string;
+  label: string; value: number | string; icon: any; subtitle?: string;
   highlight?: 'green' | 'amber' | 'red';
 }) {
   const valueColor = highlight === 'green' ? 'text-green-600'
     : highlight === 'amber' ? 'text-amber-600'
-    : highlight === 'red' ? 'text-red-600'
-    : 'text-slate-900';
+    : highlight === 'red' ? 'text-red-600' : 'text-slate-900';
   return (
     <div className="bg-white rounded-lg border border-slate-200 p-3 sm:p-5">
       <div className="flex items-center justify-between mb-1.5">
