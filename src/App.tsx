@@ -11,7 +11,6 @@ import { StaffManagement } from './components/admin/StaffManagement';
 import { ManualBooking } from './components/admin/ManualBooking';
 import { BarberAppointmentsView } from './components/barber/BarberAppointmentsView';
 import { LandingPage } from './components/landing/LandingPage';
-import { LandingEditor } from './components/admin/LandingEditor';
 
 type GuestView = 'landing' | 'book' | 'auth';
 
@@ -23,15 +22,9 @@ function AppContent() {
   useEffect(() => {
     if (profile) {
       switch (profile.role) {
-        case 'admin':
-          setCurrentView('dashboard');
-          break;
-        case 'stylist':
-          setCurrentView('appointments');
-          break;
-        case 'customer':
-          setCurrentView('book');
-          break;
+        case 'admin':    setCurrentView('dashboard'); break;
+        case 'stylist':  setCurrentView('appointments'); break;
+        case 'customer': setCurrentView('book'); break;
       }
     }
   }, [profile]);
@@ -44,9 +37,7 @@ function AppContent() {
     );
   }
 
-  // ============================
   // Not logged in - guest flow
-  // ============================
   if (!user) {
     if (guestView === 'auth') {
       return <AuthForm onGuestBooking={() => setGuestView('book')} />;
@@ -59,7 +50,6 @@ function AppContent() {
         />
       );
     }
-    // Default: landing page
     return (
       <LandingPage
         onBook={() => setGuestView('book')}
@@ -68,29 +58,16 @@ function AppContent() {
     );
   }
 
-  // ============================
-  // Logged in - role-based views
-  // ============================
   const renderView = () => {
     switch (currentView) {
-      case 'dashboard':
-        return <AdminDashboard />;
-      case 'manual-booking':
-        return <ManualBooking />;
-      case 'staff':
-        return <StaffManagement />;
-      case 'landing-editor':
-        return <LandingEditor />;
-      case 'book':
-        return <BookingView onShowAuth={() => setGuestView('auth')} />;
-      case 'appointments':
-        return profile?.role === 'stylist' ? <BarberAppointmentsView /> : <AppointmentsView />;
-      case 'services':
-        return <ServicesView />;
-      case 'profile':
-        return <ProfileView />;
-      default:
-        return <BookingView onShowAuth={() => setGuestView('auth')} />;
+      case 'dashboard':       return <AdminDashboard />;
+      case 'manual-booking':  return <ManualBooking />;
+      case 'staff':           return <StaffManagement />;
+      case 'book':            return <BookingView onShowAuth={() => setGuestView('auth')} />;
+      case 'appointments':    return profile?.role === 'stylist' ? <BarberAppointmentsView /> : <AppointmentsView />;
+      case 'services':        return <ServicesView />;
+      case 'profile':         return <ProfileView />;
+      default:                return <BookingView onShowAuth={() => setGuestView('auth')} />;
     }
   };
 
