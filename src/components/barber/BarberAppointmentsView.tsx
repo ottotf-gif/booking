@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Clock, User, DollarSign, CheckCircle, XCircle, Filter } from 'lucide-react';
+import { Calendar, Clock, CheckCircle, XCircle, ChevronLeft, ChevronRight, List, CalendarDays, AlertCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import type { Database } from '../../lib/database.types';
@@ -9,354 +9,566 @@ type Appointment = Database['public']['Tables']['appointments']['Row'] & {
   customer: Database['public']['Tables']['profiles']['Row'] | null;
 };
 
+type ViewMode = 'week' | 'list';
 type StatusFilter = 'upcoming' | 'completed' | 'all';
+
+const DAY_LABELS_SHORT = ['Sön', 'Mån', 'Tis', 'Ons', 'Tor', 'Fre', 'Lör'];
+
+// Get Monday of the week containing `date`
+function getMonday(date: Date): Date {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day; // if Sunday, go back 6, otherwise back to Monday
+  d.setDate(d.getDate() + diff);
+  return d;
+}
+
+function formatYmd(d: Date): string {
+  return d.toISOString().split('T')[0];
+}
+
+function toMinutes(t: string): number {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
 
 export function BarberAppointmentsView() {
   const { user } = useAuth();
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [upcomingCount, setUpcomingCount] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<ViewMode>('week');
+
+  // Week view state
+  const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()));
+  const [weekAppts, setWeekAppts] = useState<Appointment[]>([]);
+  const [weekLoading, setWeekLoading] = useState(true);
+
+  // List view state
   const [filter, setFilter] = useState<StatusFilter>('upcoming');
+  const [listAppts, setListAppts] = useState<Appointment[]>([]);
+  const [listLoading, setListLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (user) {
-      loadAppointments();
-      loadUpcomingCount();
-    }
-  }, [user, filter]);
+    if (user && viewMode === 'week') loadWeek();
+  }, [user, weekStart, viewMode]);
 
-  const loadUpcomingCount = async () => {
+  useEffect(() => {
+    if (user && viewMode === 'list') loadList();
+  }, [user, filter, viewMode]);
+
+  const loadWeek = async () => {
     if (!user) return;
-    const today = new Date().toISOString().split('T')[0];
-    const { count } = await supabase
-      .from('appointments')
-      .select('id', { count: 'exact', head: true })
-      .eq('stylist_id', user.id)
-      .gte('appointment_date', today)
-      .neq('status', 'cancelled')
-      .neq('status', 'completed');
-    setUpcomingCount(count ?? 0);
+    setWeekLoading(true);
+    try {
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+
+      const { data, error } = await supabase
+        .from('appointments')
+        .select(`*, service:services(*), customer:profiles(*)`)
+        .eq('stylist_id', user.id)
+        .gte('appointment_date', formatYmd(weekStart))
+        .lte('appointment_date', formatYmd(weekEnd))
+        .neq('status', 'cancelled')
+        .order('start_time', { ascending: true });
+      if (error) throw error;
+      setWeekAppts((data as any) || []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setWeekLoading(false);
+    }
   };
 
-  const loadAppointments = async () => {
+  const loadList = async () => {
+    if (!user) return;
+    setListLoading(true);
     try {
-      setLoading(true);
-
       let query = supabase
         .from('appointments')
-        .select(`
-          *,
-          service:services(*),
-          customer:profiles(*)
-        `)
-        .eq('stylist_id', user?.id)
-        .order('appointment_date', { ascending: true })
+        .select(`*, service:services(*), customer:profiles(*)`)
+        .eq('stylist_id', user.id)
+        .order('appointment_date', { ascending: filter !== 'completed' })
         .order('start_time', { ascending: true });
 
-      // Apply filter based on status
-      const today = new Date().toISOString().split('T')[0];
-
+      const today = formatYmd(new Date());
       if (filter === 'upcoming') {
-        query = query
-          .gte('appointment_date', today)
-          .neq('status', 'cancelled')
-          .neq('status', 'completed');
+        query = query.gte('appointment_date', today).neq('status', 'cancelled').neq('status', 'completed');
       } else if (filter === 'completed') {
         query = query.eq('status', 'completed');
       }
-
       const { data, error } = await query;
-
       if (error) throw error;
-      setAppointments((data as any) || []);
-    } catch (error) {
-      console.error('Error loading appointments:', error);
+      setListAppts((data as any) || []);
+    } catch (e) {
+      console.error(e);
     } finally {
-      setLoading(false);
+      setListLoading(false);
     }
   };
 
-  // Mark appointment as completed AND paid in a single atomic operation
-  // This ensures both status updates succeed or both fail together
-  const handleMarkCompletedAndPaid = async (appointmentId: string, isCompleted: boolean, isPaid: boolean) => {
-    setUpdatingId(appointmentId);
+  const handleMarkCompletedAndPaid = async (apt: Appointment) => {
+    setUpdatingId(apt.id);
     try {
-      // Check if already both completed and paid
-      const isFullyProcessed = isCompleted && isPaid;
-
-      if (isFullyProcessed) {
-        // Revert both: set status back to confirmed and payment_status back to pending
-        const { error } = await supabase
-          .from('appointments')
-          .update({
-            status: 'confirmed',
-            payment_status: 'pending'
-          })
-          .eq('id', appointmentId);
-
-        if (error) throw error;
-      } else {
-        // Mark as completed AND paid in single atomic operation
-        const { error } = await supabase
-          .from('appointments')
-          .update({
-            status: 'completed',
-            payment_status: 'paid'
-          })
-          .eq('id', appointmentId);
-
-        if (error) throw error;
-      }
-
-      await loadAppointments();
-      loadUpcomingCount();
-    } catch (error: any) {
-      alert(error.message || 'Misslyckades att uppdatera bokning');
+      const fullyDone = apt.status === 'completed' && apt.payment_status === 'paid';
+      const newValues = fullyDone
+        ? { status: 'confirmed' as const, payment_status: 'pending' as const }
+        : { status: 'completed' as const, payment_status: 'paid' as const };
+      const { error } = await supabase.from('appointments').update(newValues).eq('id', apt.id);
+      if (error) throw error;
+      // Reload whichever view is active
+      if (viewMode === 'week') await loadWeek(); else await loadList();
+    } catch (e: any) {
+      alert(e.message || 'Misslyckades att uppdatera');
     } finally {
       setUpdatingId(null);
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    const styles = {
-      pending: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-      confirmed: 'bg-blue-100 text-blue-800 border-blue-200',
-      completed: 'bg-green-100 text-green-800 border-green-200',
-      cancelled: 'bg-red-100 text-red-800 border-red-200',
-      no_show: 'bg-gray-100 text-gray-800 border-gray-200',
-    };
-    return styles[status as keyof typeof styles] || styles.pending;
-  };
-
-  const getPaymentBadge = (status: string) => {
-    const styles = {
-      pending: 'bg-orange-100 text-orange-800 border-orange-200',
-      paid: 'bg-green-100 text-green-800 border-green-200',
-      refunded: 'bg-purple-100 text-purple-800 border-purple-200',
-      failed: 'bg-red-100 text-red-800 border-red-200',
-    };
-    return styles[status as keyof typeof styles] || styles.pending;
-  };
-
-  const formatDate = (date: string) => {
-    return new Date(date).toLocaleDateString('sv-SE', {
-      weekday: 'short',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-slate-600">Laddar dina bokningar...</div>
-      </div>
-    );
-  }
-
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-slate-900">Mina Bokningar</h1>
-        <p className="text-slate-600 mt-1">Hantera dina kundmöten och betalningar</p>
-      </div>
-
-      {/* Filter Tabs */}
-      <div className="flex items-center gap-4 mb-6">
-        <div className="flex items-center gap-2">
-          <Filter className="w-5 h-5 text-slate-600" />
-          <span className="text-sm font-medium text-slate-700">Visa:</span>
-        </div>
-        <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5 sm:mb-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Mitt schema</h1>
+        {/* View mode toggle */}
+        <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
           <button
-            onClick={() => setFilter('upcoming')}
-            className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
-              filter === 'upcoming'
-                ? 'bg-blue-600 text-white'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            onClick={() => setViewMode('week')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              viewMode === 'week' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
             }`}
           >
-            Kommande ({upcomingCount})
+            <CalendarDays className="w-4 h-4" />
+            Vecka
           </button>
           <button
-            onClick={() => setFilter('completed')}
-            className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
-              filter === 'completed'
-                ? 'bg-green-600 text-white'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            onClick={() => setViewMode('list')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              viewMode === 'list' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
             }`}
           >
-            Utförda
-          </button>
-          <button
-            onClick={() => setFilter('all')}
-            className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
-              filter === 'all'
-                ? 'bg-slate-900 text-white'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            Alla
+            <List className="w-4 h-4" />
+            Lista
           </button>
         </div>
       </div>
 
-      {/* Appointments List */}
-      {appointments.length === 0 ? (
-        <div className="bg-white rounded-lg border border-slate-200 p-12 text-center">
-          <Calendar className="w-16 h-16 text-slate-400 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-slate-900 mb-2">
-            Inga bokningar
-          </h3>
-          <p className="text-slate-600">
-            {filter === 'upcoming' && 'Du har inga kommande bokningar.'}
-            {filter === 'completed' && 'Du har inga utförda bokningar.'}
-            {filter === 'all' && 'Du har inga bokningar ännu.'}
+      {viewMode === 'week' ? (
+        <WeekView
+          weekStart={weekStart}
+          appointments={weekAppts}
+          loading={weekLoading}
+          onPrev={() => { const d = new Date(weekStart); d.setDate(d.getDate() - 7); setWeekStart(d); }}
+          onNext={() => { const d = new Date(weekStart); d.setDate(d.getDate() + 7); setWeekStart(d); }}
+          onToday={() => setWeekStart(getMonday(new Date()))}
+          onMarkDone={handleMarkCompletedAndPaid}
+          updatingId={updatingId}
+        />
+      ) : (
+        <ListView
+          appointments={listAppts}
+          loading={listLoading}
+          filter={filter}
+          onFilterChange={setFilter}
+          onMarkDone={handleMarkCompletedAndPaid}
+          updatingId={updatingId}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// WEEK VIEW
+// ============================================================================
+function WeekView({
+  weekStart, appointments, loading, onPrev, onNext, onToday, onMarkDone, updatingId,
+}: {
+  weekStart: Date;
+  appointments: Appointment[];
+  loading: boolean;
+  onPrev: () => void;
+  onNext: () => void;
+  onToday: () => void;
+  onMarkDone: (apt: Appointment) => void;
+  updatingId: string | null;
+}) {
+  const todayStr = formatYmd(new Date());
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  const isThisWeek = weekStart <= new Date() && new Date() <= weekEnd;
+
+  // Build 7-day grid (Mon-Sun)
+  const days: Date[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + i);
+    days.push(d);
+  }
+
+  // Find the "next upcoming" appointment from today
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const nextAppt = appointments
+    .filter(a => {
+      if (a.appointment_date < todayStr) return false;
+      if (a.appointment_date > todayStr) return true;
+      return toMinutes(a.start_time) >= nowMin;
+    })
+    .sort((a, b) => {
+      if (a.appointment_date !== b.appointment_date) return a.appointment_date.localeCompare(b.appointment_date);
+      return a.start_time.localeCompare(b.start_time);
+    })[0];
+
+  // Compute total bookings per day for the badge
+  const byDate = new Map<string, Appointment[]>();
+  appointments.forEach(a => {
+    const list = byDate.get(a.appointment_date) || [];
+    list.push(a);
+    byDate.set(a.appointment_date, list);
+  });
+
+  // Compute time bounds for the column grid (round to hour)
+  const HOUR_START = 8;
+  const HOUR_END = 20;
+  const HOUR_PX = 60; // 60px per hour on desktop
+
+  return (
+    <div className="space-y-4">
+      {/* Header with nav */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-slate-200 rounded-lg p-3 sm:p-4">
+        <div>
+          <p className="text-xs text-slate-500 uppercase tracking-wider">
+            {weekStart.toLocaleDateString('sv-SE', { month: 'long', year: 'numeric' })}
+          </p>
+          <p className="text-base sm:text-lg font-semibold text-slate-900">
+            {weekStart.toLocaleDateString('sv-SE', { day: 'numeric', month: 'short' })} – {weekEnd.toLocaleDateString('sv-SE', { day: 'numeric', month: 'short' })}
           </p>
         </div>
+        <div className="flex items-center gap-1">
+          <button onClick={onPrev} className="p-2 hover:bg-slate-100 rounded-md" aria-label="Föregående vecka">
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          <button
+            onClick={onToday}
+            disabled={isThisWeek}
+            className="px-3 py-1.5 text-sm font-medium border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-40"
+          >
+            Idag
+          </button>
+          <button onClick={onNext} className="p-2 hover:bg-slate-100 rounded-md" aria-label="Nästa vecka">
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Next appointment card */}
+      {nextAppt && (
+        <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-lg p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <div className="min-w-0">
+              <p className="text-xs uppercase tracking-wider text-slate-300 mb-0.5">Nästa kund</p>
+              <h3 className="text-lg sm:text-xl font-bold truncate">
+                {nextAppt.is_guest_booking ? (nextAppt.guest_name || 'Gäst') : (nextAppt.customer?.full_name || 'Okänd')}
+              </h3>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <p className="text-xs text-slate-300">
+                {nextAppt.appointment_date === todayStr
+                  ? 'Idag'
+                  : new Date(nextAppt.appointment_date + 'T00:00:00').toLocaleDateString('sv-SE', { weekday: 'short', day: 'numeric', month: 'short' })}
+              </p>
+              <p className="text-lg sm:text-xl font-bold">{nextAppt.start_time.substring(0, 5)}</p>
+            </div>
+          </div>
+          <p className="text-sm text-slate-200">{nextAppt.service?.name || 'Borttagen tjänst'} · {nextAppt.total_amount} kr</p>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="bg-white border border-slate-200 rounded-lg p-12 text-center text-slate-600">Laddar...</div>
       ) : (
-        <div className="space-y-4">
-          {appointments.map((appointment) => (
-            <div
-              key={appointment.id}
-              className="bg-white rounded-lg border border-slate-200 p-6 hover:shadow-md transition-shadow"
-            >
-              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                {/* Appointment Info */}
-                <div className="flex-1 space-y-3">
-                  {/* Date and Time */}
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2 text-slate-900 font-semibold">
-                      <Calendar className="w-4 h-4 text-slate-600" />
-                      {formatDate(appointment.appointment_date)}
-                    </div>
-                    <div className="flex items-center gap-2 text-slate-700">
-                      <Clock className="w-4 h-4 text-slate-600" />
-                      {appointment.start_time} - {appointment.end_time}
-                    </div>
-                  </div>
-
-                  {/* Customer and Service */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <>
+          {/* Mobile: stacked list per day */}
+          <div className="md:hidden space-y-3">
+            {days.map(d => {
+              const dStr = formatYmd(d);
+              const list = (byDate.get(dStr) || []).sort((a, b) => a.start_time.localeCompare(b.start_time));
+              const isToday = dStr === todayStr;
+              return (
+                <div key={dStr} className={`bg-white border rounded-lg overflow-hidden ${isToday ? 'border-slate-900 ring-1 ring-slate-900' : 'border-slate-200'}`}>
+                  <div className={`px-3 py-2 flex items-center justify-between ${isToday ? 'bg-slate-900 text-white' : 'bg-slate-50'}`}>
                     <div className="flex items-center gap-2">
-                      <User className="w-4 h-4 text-slate-600" />
-                      <div>
-                        <span className="text-sm text-slate-600">Kund:</span>
-                        <p className="font-medium text-slate-900 flex items-center gap-2">
-                          {appointment.is_guest_booking
-                            ? appointment.guest_name || 'Gäst'
-                            : appointment.customer?.full_name || 'Okänd'}
-                          {appointment.is_guest_booking && (
-                            <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
-                              Gäst
-                            </span>
-                          )}
-                        </p>
-                        {appointment.is_guest_booking && (appointment.guest_phone || appointment.guest_email) && (
-                          <p className="text-xs text-slate-500">
-                            {appointment.guest_phone}
-                            {appointment.guest_phone && appointment.guest_email && ' · '}
-                            {appointment.guest_email}
-                          </p>
-                        )}
-                      </div>
+                      <span className={`text-xs font-semibold uppercase tracking-wider ${isToday ? 'text-slate-300' : 'text-slate-500'}`}>
+                        {DAY_LABELS_SHORT[d.getDay()]}
+                      </span>
+                      <span className="text-sm font-bold">{d.getDate()}</span>
+                      {isToday && <span className="text-[10px] uppercase font-bold tracking-wider">Idag</span>}
                     </div>
-                    <div>
-                      <span className="text-sm text-slate-600">Tjänst:</span>
-                      <p className="font-medium text-slate-900">
-                        {appointment.service?.name || 'Borttagen tjänst'}
-                      </p>
-                    </div>
+                    {list.length > 0 && (
+                      <span className={`text-xs font-medium ${isToday ? 'text-slate-300' : 'text-slate-500'}`}>
+                        {list.length} bok.
+                      </span>
+                    )}
                   </div>
-
-                  {/* Amount */}
-                  <div className="flex items-center gap-2">
-                    <DollarSign className="w-4 h-4 text-slate-600" />
-                    <span className="text-lg font-semibold text-slate-900">
-                      {Number(appointment.total_amount).toFixed(2)} kr
-                    </span>
-                  </div>
-
-                  {/* Status Badges */}
-                  <div className="flex gap-2">
-                    <span
-                      className={`px-3 py-1 text-xs font-medium rounded-full border ${getStatusBadge(
-                        appointment.status
-                      )}`}
-                    >
-                      {appointment.status === 'pending' && 'Väntande'}
-                      {appointment.status === 'confirmed' && 'Bekräftad'}
-                      {appointment.status === 'completed' && 'Utförd'}
-                      {appointment.status === 'cancelled' && 'Inställd'}
-                      {appointment.status === 'no_show' && 'Utebliven'}
-                    </span>
-                    <span
-                      className={`px-3 py-1 text-xs font-medium rounded-full border ${getPaymentBadge(
-                        appointment.payment_status
-                      )}`}
-                    >
-                      {appointment.payment_status === 'pending' && 'Obetald'}
-                      {appointment.payment_status === 'paid' && 'Betald'}
-                      {appointment.payment_status === 'refunded' && 'Återbetald'}
-                      {appointment.payment_status === 'failed' && 'Misslyckad'}
-                    </span>
-                  </div>
-
-                  {/* Special Requests */}
-                  {appointment.special_requests && (
-                    <div className="pt-3 border-t border-slate-200">
-                      <p className="text-sm text-slate-600">
-                        <strong>Önskemål:</strong> {appointment.special_requests}
-                      </p>
+                  {list.length === 0 ? (
+                    <p className="px-3 py-3 text-xs text-slate-400">Inga bokningar</p>
+                  ) : (
+                    <div className="divide-y divide-slate-100">
+                      {list.map(apt => (
+                        <MobileAptCard
+                          key={apt.id}
+                          apt={apt}
+                          updating={updatingId === apt.id}
+                          onMarkDone={onMarkDone}
+                        />
+                      ))}
                     </div>
                   )}
                 </div>
+              );
+            })}
+          </div>
 
-                {/* Action Button */}
-                <div className="flex flex-col gap-2 lg:w-48">
-                  {/* Combined Button: Mark as Completed & Paid */}
-                  <button
-                    onClick={() =>
-                      handleMarkCompletedAndPaid(
-                        appointment.id,
-                        appointment.status === 'completed',
-                        appointment.payment_status === 'paid'
-                      )
-                    }
-                    disabled={updatingId === appointment.id || appointment.status === 'cancelled'}
-                    className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                      appointment.status === 'completed' && appointment.payment_status === 'paid'
-                        ? 'bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-200'
-                        : 'bg-gradient-to-r from-green-600 to-blue-600 text-white hover:from-green-700 hover:to-blue-700 shadow-md'
-                    }`}
-                  >
-                    {appointment.status === 'completed' && appointment.payment_status === 'paid' ? (
-                      <>
-                        <XCircle className="w-4 h-4" />
-                        Ångra
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle className="w-4 h-4" />
-                        Utförd & Betald
-                      </>
-                    )}
-                  </button>
+          {/* Desktop: 7-column timeline grid */}
+          <div className="hidden md:block bg-white border border-slate-200 rounded-lg overflow-hidden">
+            <div className="grid grid-cols-[60px_repeat(7,1fr)] border-b border-slate-200 sticky top-0 bg-slate-50 z-10">
+              <div></div>
+              {days.map(d => {
+                const isToday = formatYmd(d) === todayStr;
+                return (
+                  <div key={d.toISOString()} className={`p-2 text-center border-l border-slate-200 ${isToday ? 'bg-slate-900 text-white' : ''}`}>
+                    <div className={`text-xs uppercase tracking-wider ${isToday ? 'text-slate-300' : 'text-slate-500'}`}>
+                      {DAY_LABELS_SHORT[d.getDay()]}
+                    </div>
+                    <div className="text-sm font-bold">{d.getDate()}</div>
+                  </div>
+                );
+              })}
+            </div>
 
-                  {/* Info text explaining the action */}
-                  {!(appointment.status === 'completed' && appointment.payment_status === 'paid') && (
-                    <p className="text-xs text-slate-500 text-center">
-                      Markerar tjänsten som utförd och betald samtidigt
-                    </p>
+            <div className="grid grid-cols-[60px_repeat(7,1fr)] relative" style={{ height: `${(HOUR_END - HOUR_START) * HOUR_PX}px` }}>
+              {/* Hour labels */}
+              <div className="border-r border-slate-200">
+                {Array.from({ length: HOUR_END - HOUR_START }).map((_, i) => (
+                  <div key={i} className="text-xs text-slate-500 text-right pr-2 border-b border-slate-100" style={{ height: `${HOUR_PX}px` }}>
+                    {(HOUR_START + i).toString().padStart(2, '0')}:00
+                  </div>
+                ))}
+              </div>
+              {/* Day columns */}
+              {days.map(d => {
+                const dStr = formatYmd(d);
+                const list = byDate.get(dStr) || [];
+                return (
+                  <div key={dStr} className="relative border-l border-slate-200">
+                    {Array.from({ length: HOUR_END - HOUR_START }).map((_, i) => (
+                      <div key={i} className="border-b border-slate-100" style={{ height: `${HOUR_PX}px` }} />
+                    ))}
+                    {list.map(apt => {
+                      const start = toMinutes(apt.start_time);
+                      const end = toMinutes(apt.end_time);
+                      const top = ((start - HOUR_START * 60) / 60) * HOUR_PX;
+                      const height = ((end - start) / 60) * HOUR_PX;
+                      if (top < 0 || top > (HOUR_END - HOUR_START) * HOUR_PX) return null;
+                      const color = aptColors(apt);
+                      return (
+                        <div
+                          key={apt.id}
+                          className={`absolute left-1 right-1 rounded p-1.5 overflow-hidden text-xs cursor-pointer transition-shadow hover:shadow-md ${color.bg} ${color.border} border-l-2`}
+                          style={{ top: `${top}px`, height: `${Math.max(height, 24)}px` }}
+                          title={`${apt.start_time.substring(0,5)}–${apt.end_time.substring(0,5)} · ${apt.is_guest_booking ? apt.guest_name : apt.customer?.full_name} · ${apt.service?.name}`}
+                          onClick={() => {
+                            if (apt.status !== 'cancelled' && updatingId !== apt.id) onMarkDone(apt);
+                          }}
+                        >
+                          <p className={`font-semibold truncate ${color.text}`}>
+                            {apt.start_time.substring(0, 5)}
+                          </p>
+                          <p className={`truncate ${color.text}`}>
+                            {apt.is_guest_booking ? apt.guest_name : apt.customer?.full_name}
+                          </p>
+                          {height > 50 && (
+                            <p className={`truncate text-[10px] opacity-75 ${color.text}`}>
+                              {apt.service?.name}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="px-4 py-2 text-xs text-slate-500 border-t border-slate-200 bg-slate-50">
+              Klicka på en bokning för att markera som utförd & betald (eller ångra).
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function aptColors(apt: Appointment) {
+  const isPaid = apt.payment_status === 'paid';
+  const isDone = apt.status === 'completed';
+  if (isDone && isPaid) return { bg: 'bg-blue-100', border: 'border-blue-500', text: 'text-blue-900' };
+  if (isDone) return { bg: 'bg-purple-100', border: 'border-purple-500', text: 'text-purple-900' };
+  if (apt.status === 'pending') return { bg: 'bg-amber-100', border: 'border-amber-500', text: 'text-amber-900' };
+  return { bg: 'bg-green-100', border: 'border-green-500', text: 'text-green-900' }; // confirmed
+}
+
+function MobileAptCard({
+  apt, updating, onMarkDone,
+}: {
+  apt: Appointment; updating: boolean; onMarkDone: (apt: Appointment) => void;
+}) {
+  const color = aptColors(apt);
+  const fullyDone = apt.status === 'completed' && apt.payment_status === 'paid';
+
+  return (
+    <div className={`p-3 border-l-4 ${color.border}`}>
+      <div className="flex items-start justify-between gap-2 mb-1">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-slate-900 truncate">
+            {apt.is_guest_booking ? (apt.guest_name || 'Gäst') : (apt.customer?.full_name || 'Okänd')}
+          </p>
+          <p className="text-xs text-slate-500">{apt.service?.name || 'Borttagen tjänst'}</p>
+        </div>
+        <div className="text-right flex-shrink-0">
+          <p className="text-sm font-bold text-slate-900">{apt.start_time.substring(0, 5)}</p>
+          <p className="text-xs text-slate-500">{apt.total_amount} kr</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+        <StatusPill status={apt.status} />
+        <PaymentPill status={apt.payment_status} />
+        <button
+          onClick={() => onMarkDone(apt)}
+          disabled={updating}
+          className={`ml-auto flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md transition-colors disabled:opacity-50 ${
+            fullyDone
+              ? 'text-slate-600 hover:bg-slate-100'
+              : 'text-white bg-gradient-to-r from-green-600 to-blue-600 hover:opacity-90'
+          }`}
+        >
+          {fullyDone ? (<><XCircle className="w-3.5 h-3.5" /> Ångra</>) : (<><CheckCircle className="w-3.5 h-3.5" /> Klar & betald</>)}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// LIST VIEW
+// ============================================================================
+function ListView({
+  appointments, loading, filter, onFilterChange, onMarkDone, updatingId,
+}: {
+  appointments: Appointment[]; loading: boolean; filter: StatusFilter;
+  onFilterChange: (f: StatusFilter) => void;
+  onMarkDone: (apt: Appointment) => void;
+  updatingId: string | null;
+}) {
+  return (
+    <div>
+      <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
+        {(['upcoming', 'completed', 'all'] as const).map(f => (
+          <button
+            key={f}
+            onClick={() => onFilterChange(f)}
+            className={`px-3 py-1.5 rounded-lg font-medium text-sm whitespace-nowrap transition-colors ${
+              filter === f ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            {f === 'upcoming' ? 'Kommande' : f === 'completed' ? 'Utförda' : 'Alla'}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="bg-white border border-slate-200 rounded-lg p-12 text-center text-slate-600">Laddar...</div>
+      ) : appointments.length === 0 ? (
+        <div className="bg-white border border-slate-200 rounded-lg p-12 text-center">
+          <AlertCircle className="w-12 h-12 text-slate-400 mx-auto mb-3" />
+          <p className="text-slate-600">Inga bokningar.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {appointments.map(apt => {
+            const fullyDone = apt.status === 'completed' && apt.payment_status === 'paid';
+            return (
+              <div key={apt.id} className="bg-white rounded-lg border border-slate-200 p-4 sm:p-5">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-3">
+                  <div>
+                    <h3 className="text-base sm:text-lg font-semibold text-slate-900">
+                      {apt.is_guest_booking ? (apt.guest_name || 'Gäst') : (apt.customer?.full_name || 'Okänd')}
+                    </h3>
+                    <p className="text-sm text-slate-600">{apt.service?.name || 'Borttagen tjänst'}</p>
+                  </div>
+                  <div className="text-left sm:text-right">
+                    <p className="text-base sm:text-lg font-bold text-slate-900">{apt.total_amount} kr</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm mb-3">
+                  <div className="flex items-center gap-2 text-slate-600">
+                    <Calendar className="w-4 h-4 flex-shrink-0" />
+                    <span>{new Date(apt.appointment_date + 'T00:00:00').toLocaleDateString('sv-SE', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-slate-600">
+                    <Clock className="w-4 h-4 flex-shrink-0" />
+                    <span>{apt.start_time.substring(0, 5)} – {apt.end_time.substring(0, 5)}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap pt-3 border-t border-slate-100">
+                  <StatusPill status={apt.status} />
+                  <PaymentPill status={apt.payment_status} />
+                  {apt.status !== 'cancelled' && (
+                    <button
+                      onClick={() => onMarkDone(apt)}
+                      disabled={updatingId === apt.id}
+                      className={`ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors disabled:opacity-50 ${
+                        fullyDone
+                          ? 'text-slate-700 bg-slate-100 hover:bg-slate-200'
+                          : 'text-white bg-gradient-to-r from-green-600 to-blue-600 hover:opacity-90'
+                      }`}
+                    >
+                      {fullyDone ? (<><XCircle className="w-4 h-4" /> Ångra</>) : (<><CheckCircle className="w-4 h-4" /> Klar & betald</>)}
+                    </button>
                   )}
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
   );
+}
+
+// ============================================================================
+// PILLS
+// ============================================================================
+function StatusPill({ status }: { status: string }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    pending:   { label: 'Väntande',  cls: 'bg-yellow-100 text-yellow-800' },
+    confirmed: { label: 'Bekräftad', cls: 'bg-green-100 text-green-800' },
+    completed: { label: 'Utförd',    cls: 'bg-blue-100 text-blue-800' },
+    cancelled: { label: 'Avbokad',   cls: 'bg-red-100 text-red-800' },
+    no_show:   { label: 'Utebliven', cls: 'bg-slate-100 text-slate-800' },
+  };
+  const s = map[status] || { label: status, cls: 'bg-slate-100 text-slate-800' };
+  return <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${s.cls}`}>{s.label}</span>;
+}
+
+function PaymentPill({ status }: { status: string }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    pending:  { label: 'Obetald',     cls: 'bg-orange-100 text-orange-800' },
+    paid:     { label: 'Betald',      cls: 'bg-emerald-100 text-emerald-800' },
+    refunded: { label: 'Återbetald',  cls: 'bg-purple-100 text-purple-800' },
+    failed:   { label: 'Misslyckad',  cls: 'bg-red-100 text-red-800' },
+  };
+  const s = map[status] || { label: status, cls: 'bg-slate-100 text-slate-800' };
+  return <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${s.cls}`}>{s.label}</span>;
 }
