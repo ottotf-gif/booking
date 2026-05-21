@@ -10,11 +10,15 @@ import { AdminDashboard } from './components/admin/AdminDashboard';
 import { StaffManagement } from './components/admin/StaffManagement';
 import { ManualBooking } from './components/admin/ManualBooking';
 import { BarberAppointmentsView } from './components/barber/BarberAppointmentsView';
+import { LandingPage } from './components/landing/LandingPage';
+import { LandingEditor } from './components/admin/LandingEditor';
+
+type GuestView = 'landing' | 'book' | 'auth';
 
 function AppContent() {
   const { user, loading, profile } = useAuth();
   const [currentView, setCurrentView] = useState('book');
-  const [showAuth, setShowAuth] = useState(false);
+  const [guestView, setGuestView] = useState<GuestView>('landing');
 
   useEffect(() => {
     if (profile) {
@@ -35,19 +39,38 @@ function AppContent() {
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-slate-600">Loading...</div>
+        <div className="text-slate-600">Laddar...</div>
       </div>
     );
   }
 
-  if (!user && showAuth) {
-    return <AuthForm onGuestBooking={() => setShowAuth(false)} />;
+  // ============================
+  // Not logged in - guest flow
+  // ============================
+  if (!user) {
+    if (guestView === 'auth') {
+      return <AuthForm onGuestBooking={() => setGuestView('book')} />;
+    }
+    if (guestView === 'book') {
+      return (
+        <BookingView
+          onShowAuth={() => setGuestView('auth')}
+          onBackToLanding={() => setGuestView('landing')}
+        />
+      );
+    }
+    // Default: landing page
+    return (
+      <LandingPage
+        onBook={() => setGuestView('book')}
+        onLogin={() => setGuestView('auth')}
+      />
+    );
   }
 
-  if (!user && !showAuth) {
-    return <BookingView onShowAuth={() => setShowAuth(true)} />;
-  }
-
+  // ============================
+  // Logged in - role-based views
+  // ============================
   const renderView = () => {
     switch (currentView) {
       case 'dashboard':
@@ -56,17 +79,18 @@ function AppContent() {
         return <ManualBooking />;
       case 'staff':
         return <StaffManagement />;
+      case 'landing-editor':
+        return <LandingEditor />;
       case 'book':
-        return <BookingView onShowAuth={() => setShowAuth(true)} />;
+        return <BookingView onShowAuth={() => setGuestView('auth')} />;
       case 'appointments':
-        // Use BarberAppointmentsView for stylists to allow marking as completed and paid
         return profile?.role === 'stylist' ? <BarberAppointmentsView /> : <AppointmentsView />;
       case 'services':
         return <ServicesView />;
       case 'profile':
         return <ProfileView />;
       default:
-        return <BookingView onShowAuth={() => setShowAuth(true)} />;
+        return <BookingView onShowAuth={() => setGuestView('auth')} />;
     }
   };
 
