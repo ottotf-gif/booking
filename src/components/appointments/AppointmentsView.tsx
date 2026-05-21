@@ -30,11 +30,8 @@ export function AppointmentsView() {
         .from('appointments')
         .select(`*, service:services(*), stylist:stylists(*, profile:profiles(*)), customer:profiles(*)`);
 
-      if (profile.role === 'customer') {
-        query = query.eq('customer_id', profile.id);
-      } else if (profile.role === 'stylist') {
-        query = query.eq('stylist_id', profile.id);
-      }
+      if (profile.role === 'customer') query = query.eq('customer_id', profile.id);
+      else if (profile.role === 'stylist') query = query.eq('stylist_id', profile.id);
 
       const today = new Date().toISOString().split('T')[0];
       if (filter === 'upcoming') query = query.gte('appointment_date', today);
@@ -45,7 +42,6 @@ export function AppointmentsView() {
       const list = (data as any) || [];
       setAppointments(list);
 
-      // Find already-rated appointments
       if (profile.role === 'customer' && list.length > 0) {
         const ids = list.map((a: Appointment) => a.id);
         const { data: ratings } = await supabase
@@ -70,17 +66,6 @@ export function AppointmentsView() {
     } catch (err: any) {
       alert(err.message || 'Kunde inte avboka');
     }
-  };
-
-  const getStatusBadge = (status: string) => {
-    const map: Record<string, { label: string; cls: string }> = {
-      pending: { label: 'Väntande', cls: 'bg-yellow-100 text-yellow-800' },
-      confirmed: { label: 'Bekräftad', cls: 'bg-green-100 text-green-800' },
-      completed: { label: 'Utförd', cls: 'bg-blue-100 text-blue-800' },
-      cancelled: { label: 'Avbokad', cls: 'bg-red-100 text-red-800' },
-      no_show: { label: 'Utebliven', cls: 'bg-slate-100 text-slate-800' },
-    };
-    return map[status] || { label: status, cls: 'bg-slate-100 text-slate-800' };
   };
 
   if (loading) {
@@ -119,7 +104,6 @@ export function AppointmentsView() {
       ) : (
         <div className="space-y-3">
           {appointments.map((apt) => {
-            const badge = getStatusBadge(apt.status);
             const canRate = profile?.role === 'customer' && apt.status === 'completed' && !ratedIds.has(apt.id);
             const isPast = new Date(apt.appointment_date) < new Date(new Date().toISOString().split('T')[0]);
             const canCancel = !isPast && apt.status !== 'cancelled' && apt.status !== 'completed';
@@ -131,19 +115,16 @@ export function AppointmentsView() {
                     <h3 className="text-base sm:text-lg font-semibold text-slate-900">
                       {apt.service?.name || 'Borttagen tjänst'}
                     </h3>
-                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${badge.cls}`}>
-                      {badge.label}
-                    </span>
                   </div>
                   <div className="text-base sm:text-lg font-bold text-slate-900">
                     {apt.total_amount} kr
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm mb-3">
                   <div className="flex items-center gap-2 text-slate-600">
                     <Calendar className="w-4 h-4 flex-shrink-0" />
-                    <span>{new Date(apt.appointment_date).toLocaleDateString('sv-SE', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+                    <span>{new Date(apt.appointment_date + 'T00:00:00').toLocaleDateString('sv-SE', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
                   </div>
                   <div className="flex items-center gap-2 text-slate-600">
                     <Clock className="w-4 h-4 flex-shrink-0" />
@@ -168,17 +149,20 @@ export function AppointmentsView() {
                 </div>
 
                 {apt.special_requests && (
-                  <div className="mt-3 p-3 bg-slate-50 rounded-lg text-sm text-slate-600">
+                  <div className="mb-3 p-3 bg-slate-50 rounded-lg text-sm text-slate-600">
                     <strong>Önskemål:</strong> {apt.special_requests}
                   </div>
                 )}
 
-                {(canRate || canCancel) && (
-                  <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-slate-100">
+                <div className="flex items-center gap-2 flex-wrap pt-3 border-t border-slate-100">
+                  <StatusPill status={apt.status} />
+                  <PaymentPill status={apt.payment_status} />
+
+                  <div className="ml-auto flex items-center gap-2">
                     {canRate && (
                       <button
                         onClick={() => setRatingTarget(apt)}
-                        className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100"
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100"
                       >
                         <Star className="w-4 h-4" /> Lämna betyg
                       </button>
@@ -186,13 +170,13 @@ export function AppointmentsView() {
                     {canCancel && profile?.role !== 'admin' && (
                       <button
                         onClick={() => handleCancel(apt.id)}
-                        className="px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 rounded-lg"
+                        className="px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 rounded-lg"
                       >
                         Avboka
                       </button>
                     )}
                   </div>
-                )}
+                </div>
 
                 {profile?.role === 'customer' && apt.status === 'completed' && ratedIds.has(apt.id) && (
                   <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-2 text-sm text-slate-500">
@@ -221,4 +205,27 @@ export function AppointmentsView() {
       )}
     </div>
   );
+}
+
+function StatusPill({ status }: { status: string }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    pending:   { label: 'Väntande',  cls: 'bg-yellow-100 text-yellow-800 ring-yellow-200' },
+    confirmed: { label: 'Bekräftad', cls: 'bg-green-100 text-green-800 ring-green-200' },
+    completed: { label: 'Utförd',    cls: 'bg-blue-100 text-blue-800 ring-blue-200' },
+    cancelled: { label: 'Avbokad',   cls: 'bg-red-100 text-red-800 ring-red-200' },
+    no_show:   { label: 'Utebliven', cls: 'bg-slate-100 text-slate-800 ring-slate-200' },
+  };
+  const s = map[status] || { label: status, cls: 'bg-slate-100 text-slate-800 ring-slate-200' };
+  return <span className={`px-2 py-0.5 text-xs font-medium rounded-full ring-1 ring-inset ${s.cls}`}>{s.label}</span>;
+}
+
+function PaymentPill({ status }: { status: string }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    pending:  { label: 'Obetald',     cls: 'bg-orange-100 text-orange-800 ring-orange-200' },
+    paid:     { label: 'Betald',      cls: 'bg-emerald-100 text-emerald-800 ring-emerald-200' },
+    refunded: { label: 'Återbetald',  cls: 'bg-purple-100 text-purple-800 ring-purple-200' },
+    failed:   { label: 'Misslyckad',  cls: 'bg-red-100 text-red-800 ring-red-200' },
+  };
+  const s = map[status] || { label: status, cls: 'bg-slate-100 text-slate-800 ring-slate-200' };
+  return <span className={`px-2 py-0.5 text-xs font-medium rounded-full ring-1 ring-inset ${s.cls}`}>{s.label}</span>;
 }
