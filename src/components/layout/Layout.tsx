@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Calendar, Users, LogOut, Scissors, Menu, X, User, ClipboardList, Phone, LayoutDashboard, Wrench } from 'lucide-react';
+import { Calendar, Users, LogOut, Scissors, Menu, X, User, ClipboardList, Phone, LayoutDashboard, Wrench, Home } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface LayoutProps {
@@ -18,23 +18,24 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
     switch (profile.role) {
       case 'admin':
         return [
-          { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-          { id: 'manual-booking', label: 'New Booking', icon: Phone },
-          { id: 'appointments', label: 'Appointments', icon: ClipboardList },
-          { id: 'staff', label: 'Staff', icon: Users },
-          { id: 'services', label: 'Services', icon: Wrench },
-          { id: 'profile', label: 'Profile', icon: User },
+          { id: 'dashboard', label: 'Översikt', icon: LayoutDashboard },
+          { id: 'manual-booking', label: 'Ny bokning', icon: Phone },
+          { id: 'appointments', label: 'Bokningar', icon: ClipboardList },
+          { id: 'staff', label: 'Personal', icon: Users },
+          { id: 'services', label: 'Tjänster', icon: Wrench },
+          { id: 'landing-editor', label: 'Startsida', icon: Home },
+          { id: 'profile', label: 'Profil', icon: User },
         ];
       case 'stylist':
         return [
-          { id: 'appointments', label: 'My Schedule', icon: ClipboardList },
-          { id: 'profile', label: 'Profile', icon: User },
+          { id: 'appointments', label: 'Mitt schema', icon: ClipboardList },
+          { id: 'profile', label: 'Profil', icon: User },
         ];
       case 'customer':
         return [
-          { id: 'book', label: 'Book', icon: Calendar },
-          { id: 'appointments', label: 'My Appointments', icon: ClipboardList },
-          { id: 'profile', label: 'Profile', icon: User },
+          { id: 'book', label: 'Boka', icon: Calendar },
+          { id: 'appointments', label: 'Mina bokningar', icon: ClipboardList },
+          { id: 'profile', label: 'Profil', icon: User },
         ];
       default:
         return [];
@@ -44,18 +45,14 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
   const visibleItems = getNavigationItems();
 
   const handleSignOut = async () => {
-    try {
-      await signOut();
-    } catch (error) {
-      console.error('Error signing out:', error);
-    }
+    try { await signOut(); } catch (e) { console.error(e); }
   };
 
   const roleLabel = () => {
     switch (profile?.role) {
       case 'admin': return 'Admin';
       case 'stylist': return 'Barber';
-      case 'customer': return 'Customer';
+      case 'customer': return 'Kund';
       default: return '';
     }
   };
@@ -74,21 +71,21 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
                   : 'book';
                 onNavigate(home);
               }}
-              className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+              className="flex items-center gap-2 sm:gap-3 hover:opacity-80 transition-opacity min-w-0"
             >
-              <div className="bg-slate-900 p-2 rounded-lg">
+              <div className="bg-slate-900 p-2 rounded-lg flex-shrink-0">
                 <Scissors className="w-5 h-5 text-white" />
               </div>
-              <div className="hidden sm:block">
-                <p className="text-base font-bold text-slate-900 leading-tight">Barbershop</p>
+              <div className="hidden sm:block min-w-0">
+                <p className="text-base font-bold text-slate-900 leading-tight truncate">Barbershop</p>
                 {profile && (
-                  <p className="text-xs text-slate-500 leading-tight">{roleLabel()} Portal</p>
+                  <p className="text-xs text-slate-500 leading-tight">{roleLabel()}</p>
                 )}
               </div>
             </button>
 
             {/* Desktop nav */}
-            <nav className="hidden md:flex items-center gap-0.5">
+            <nav className="hidden lg:flex items-center gap-0.5">
               {visibleItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = currentView === item.id;
@@ -108,7 +105,6 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
                 );
               })}
 
-              {/* Divider */}
               <div className="w-px h-6 bg-slate-200 mx-1" />
 
               <button
@@ -116,7 +112,30 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
                 className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-all duration-150"
               >
                 <LogOut className="w-4 h-4" />
-                <span>Sign Out</span>
+                <span>Logga ut</span>
+              </button>
+            </nav>
+
+            {/* Tablet nav - icons only */}
+            <nav className="hidden md:flex lg:hidden items-center gap-1">
+              {visibleItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = currentView === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => onNavigate(item.id)}
+                    title={item.label}
+                    className={`p-2 rounded-lg transition-colors ${
+                      isActive ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Icon className="w-5 h-5" />
+                  </button>
+                );
+              })}
+              <button onClick={handleSignOut} title="Logga ut" className="p-2 rounded-lg text-slate-500 hover:bg-slate-100">
+                <LogOut className="w-5 h-5" />
               </button>
             </nav>
 
@@ -124,13 +143,9 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="md:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-              aria-label="Toggle menu"
+              aria-label="Meny"
             >
-              {mobileMenuOpen ? (
-                <X className="w-5 h-5" />
-              ) : (
-                <Menu className="w-5 h-5" />
-              )}
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
           </div>
         </div>
@@ -138,21 +153,16 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
         {/* Mobile menu */}
         {mobileMenuOpen && (
           <div className="md:hidden border-t border-slate-100 bg-white">
-            <div className="px-4 py-3 space-y-1">
+            <div className="px-3 py-2 space-y-0.5">
               {visibleItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = currentView === item.id;
                 return (
                   <button
                     key={item.id}
-                    onClick={() => {
-                      onNavigate(item.id);
-                      setMobileMenuOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
-                      isActive
-                        ? 'bg-slate-900 text-white'
-                        : 'text-slate-700 hover:bg-slate-100'
+                    onClick={() => { onNavigate(item.id); setMobileMenuOpen(false); }}
+                    className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
+                      isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
                     }`}
                   >
                     <Icon className="w-4 h-4 flex-shrink-0" />
@@ -160,17 +170,13 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
                   </button>
                 );
               })}
-
               <div className="pt-2 mt-2 border-t border-slate-100">
                 <button
-                  onClick={() => {
-                    handleSignOut();
-                    setMobileMenuOpen(false);
-                  }}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+                  onClick={() => { handleSignOut(); setMobileMenuOpen(false); }}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors"
                 >
                   <LogOut className="w-4 h-4" />
-                  Sign Out
+                  Logga ut
                 </button>
               </div>
             </div>
@@ -178,7 +184,7 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
         )}
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         {children}
       </main>
     </div>
