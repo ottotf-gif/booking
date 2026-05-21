@@ -1,192 +1,89 @@
-import { useState } from 'react';
-import { Calendar, Users, LogOut, Scissors, Menu, X, User, ClipboardList, Phone, LayoutDashboard, Wrench, Home } from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext';
+import { useState, useEffect } from 'react';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { AuthForm } from './components/auth/AuthForm';
+import { Layout } from './components/layout/Layout';
+import { BookingView } from './components/booking/BookingView';
+import { AppointmentsView } from './components/appointments/AppointmentsView';
+import { ServicesView } from './components/services/ServicesView';
+import { ProfileView } from './components/profile/ProfileView';
+import { AdminDashboard } from './components/admin/AdminDashboard';
+import { StaffManagement } from './components/admin/StaffManagement';
+import { ManualBooking } from './components/admin/ManualBooking';
+import { BarberAppointmentsView } from './components/barber/BarberAppointmentsView';
+import { LandingPage } from './components/landing/LandingPage';
 
-interface LayoutProps {
-  children: React.ReactNode;
-  currentView: string;
-  onNavigate: (view: string) => void;
-}
+type GuestView = 'landing' | 'book' | 'auth';
 
-export function Layout({ children, currentView, onNavigate }: LayoutProps) {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { profile, signOut } = useAuth();
+function AppContent() {
+  const { user, loading, profile } = useAuth();
+  const [currentView, setCurrentView] = useState('book');
+  const [guestView, setGuestView] = useState<GuestView>('landing');
 
-  const getNavigationItems = () => {
-    if (!profile) return [];
-
-    switch (profile.role) {
-      case 'admin':
-        return [
-          { id: 'dashboard', label: 'Översikt', icon: LayoutDashboard },
-          { id: 'manual-booking', label: 'Ny bokning', icon: Phone },
-          { id: 'appointments', label: 'Bokningar', icon: ClipboardList },
-          { id: 'staff', label: 'Personal', icon: Users },
-          { id: 'services', label: 'Tjänster', icon: Wrench },
-          { id: 'landing-editor', label: 'Startsida', icon: Home },
-          { id: 'profile', label: 'Profil', icon: User },
-        ];
-      case 'stylist':
-        return [
-          { id: 'appointments', label: 'Mitt schema', icon: ClipboardList },
-          { id: 'profile', label: 'Profil', icon: User },
-        ];
-      case 'customer':
-        return [
-          { id: 'book', label: 'Boka', icon: Calendar },
-          { id: 'appointments', label: 'Mina bokningar', icon: ClipboardList },
-          { id: 'profile', label: 'Profil', icon: User },
-        ];
-      default:
-        return [];
+  useEffect(() => {
+    if (profile) {
+      switch (profile.role) {
+        case 'admin':    setCurrentView('dashboard'); break;
+        case 'stylist':  setCurrentView('appointments'); break;
+        case 'customer': setCurrentView('book'); break;
+      }
     }
-  };
+  }, [profile]);
 
-  const visibleItems = getNavigationItems();
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-slate-600">Laddar...</div>
+      </div>
+    );
+  }
 
-  const handleSignOut = async () => {
-    try { await signOut(); } catch (e) { console.error(e); }
-  };
+  // Not logged in - guest flow
+  if (!user) {
+    if (guestView === 'auth') {
+      return <AuthForm onGuestBooking={() => setGuestView('book')} />;
+    }
+    if (guestView === 'book') {
+      return (
+        <BookingView
+          onShowAuth={() => setGuestView('auth')}
+          onBackToLanding={() => setGuestView('landing')}
+        />
+      );
+    }
+    return (
+      <LandingPage
+        onBook={() => setGuestView('book')}
+        onLogin={() => setGuestView('auth')}
+      />
+    );
+  }
 
-  const roleLabel = () => {
-    switch (profile?.role) {
-      case 'admin': return 'Admin';
-      case 'stylist': return 'Barber';
-      case 'customer': return 'Kund';
-      default: return '';
+  const renderView = () => {
+    switch (currentView) {
+      case 'dashboard':       return <AdminDashboard />;
+      case 'manual-booking':  return <ManualBooking />;
+      case 'staff':           return <StaffManagement />;
+      case 'book':            return <BookingView onShowAuth={() => setGuestView('auth')} />;
+      case 'appointments':    return profile?.role === 'stylist' ? <BarberAppointmentsView /> : <AppointmentsView />;
+      case 'services':        return <ServicesView />;
+      case 'profile':         return <ProfileView />;
+      default:                return <BookingView onShowAuth={() => setGuestView('auth')} />;
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-
-            {/* Logo */}
-            <button
-              onClick={() => {
-                const home = profile?.role === 'admin' ? 'dashboard'
-                  : profile?.role === 'stylist' ? 'appointments'
-                  : 'book';
-                onNavigate(home);
-              }}
-              className="flex items-center gap-2 sm:gap-3 hover:opacity-80 transition-opacity min-w-0"
-            >
-              <div className="bg-slate-900 p-2 rounded-lg flex-shrink-0">
-                <Scissors className="w-5 h-5 text-white" />
-              </div>
-              <div className="hidden sm:block min-w-0">
-                <p className="text-base font-bold text-slate-900 leading-tight truncate">Barbershop</p>
-                {profile && (
-                  <p className="text-xs text-slate-500 leading-tight">{roleLabel()}</p>
-                )}
-              </div>
-            </button>
-
-            {/* Desktop nav */}
-            <nav className="hidden lg:flex items-center gap-0.5">
-              {visibleItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = currentView === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => onNavigate(item.id)}
-                    className={`relative flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
-                      isActive
-                        ? 'bg-slate-900 text-white shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                    }`}
-                  >
-                    <Icon className="w-4 h-4 flex-shrink-0" />
-                    <span>{item.label}</span>
-                  </button>
-                );
-              })}
-
-              <div className="w-px h-6 bg-slate-200 mx-1" />
-
-              <button
-                onClick={handleSignOut}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-all duration-150"
-              >
-                <LogOut className="w-4 h-4" />
-                <span>Logga ut</span>
-              </button>
-            </nav>
-
-            {/* Tablet nav - icons only */}
-            <nav className="hidden md:flex lg:hidden items-center gap-1">
-              {visibleItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = currentView === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => onNavigate(item.id)}
-                    title={item.label}
-                    className={`p-2 rounded-lg transition-colors ${
-                      isActive ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    <Icon className="w-5 h-5" />
-                  </button>
-                );
-              })}
-              <button onClick={handleSignOut} title="Logga ut" className="p-2 rounded-lg text-slate-500 hover:bg-slate-100">
-                <LogOut className="w-5 h-5" />
-              </button>
-            </nav>
-
-            {/* Mobile hamburger */}
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-              aria-label="Meny"
-            >
-              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
-          </div>
-        </div>
-
-        {/* Mobile menu */}
-        {mobileMenuOpen && (
-          <div className="md:hidden border-t border-slate-100 bg-white">
-            <div className="px-3 py-2 space-y-0.5">
-              {visibleItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = currentView === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => { onNavigate(item.id); setMobileMenuOpen(false); }}
-                    className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
-                      isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
-                    }`}
-                  >
-                    <Icon className="w-4 h-4 flex-shrink-0" />
-                    {item.label}
-                  </button>
-                );
-              })}
-              <div className="pt-2 mt-2 border-t border-slate-100">
-                <button
-                  onClick={() => { handleSignOut(); setMobileMenuOpen(false); }}
-                  className="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors"
-                >
-                  <LogOut className="w-4 h-4" />
-                  Logga ut
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        {children}
-      </main>
-    </div>
+    <Layout currentView={currentView} onNavigate={setCurrentView}>
+      {renderView()}
+    </Layout>
   );
 }
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+}
+
+export default App;
