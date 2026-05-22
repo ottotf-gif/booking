@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Calendar, Users, LogOut, Scissors, Menu, X, User, ClipboardList, Phone, LayoutDashboard, Wrench } from 'lucide-react';
+import { Calendar, Users, LogOut, Menu, X, User, ClipboardList, Phone, LayoutDashboard, Wrench } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { MustacheIcon } from '../common/MustacheIcon';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -70,10 +71,10 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
               className="flex items-center gap-2 sm:gap-3 hover:opacity-80 transition-opacity min-w-0"
             >
               <div className="bg-slate-900 p-2 rounded-lg flex-shrink-0">
-                <Scissors className="w-5 h-5 text-white" />
+                <MustacheIcon className="w-5 h-5 text-white" />
               </div>
               <div className="hidden sm:block min-w-0">
-                <p className="text-base font-bold text-slate-900 leading-tight truncate">Barbershop</p>
+                <p className="text-base font-bold text-slate-900 leading-tight truncate">Nordic Barber</p>
                 {profile && (
                   <p className="text-xs text-slate-500 leading-tight">{roleLabel()}</p>
                 )}
