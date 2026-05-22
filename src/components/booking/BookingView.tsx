@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Clock, User, ArrowRight, Check, LogIn, CheckCircle, Scissors, ChevronLeft } from 'lucide-react';
+import { Calendar, Clock, User, ArrowRight, Check, LogIn, CheckCircle, ChevronLeft } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { GuestBookingFlow, type GuestInfo } from './GuestBookingFlow';
+import { MustacheIcon } from '../common/MustacheIcon';
 import type { Database } from '../../lib/database.types';
 
 type Service = Database['public']['Tables']['services']['Row'];
@@ -137,6 +138,10 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
         }
       });
 
+      // ============================================================
+      // FIX: Get ALL existing appointments (full minute ranges)
+      // A barber can only have ONE booking per quarter-hour.
+      // ============================================================
       const { data: existingAppointments } = await supabase
         .from('appointments')
         .select('start_time, end_time')
@@ -166,18 +171,26 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
         const mm = (m % 60).toString().padStart(2, '0');
         const time = `${hh}:${mm}`;
         const slotStart = m;
-        const slotEnd = m + 15;
         const serviceEnd = m + selectedService.duration_minutes;
 
+        // Must fit inside ONE working range (excludes lunch gaps)
         const insideRange = workingRanges.some(r => slotStart >= r.start && serviceEnd <= r.end);
+
         const isBlocked = blockedTimes.has(time);
-        const blockTaken = bookedRanges.some(r => slotStart < r.end && slotEnd > r.start);
+
+        // CRITICAL: The slot is taken if the QUARTER itself falls inside any existing booking.
+        // This is the bug fix: a slot at 09:15 must be blocked if a booking exists 09:00-09:30.
+        const slotTaken = bookedRanges.some(r => slotStart >= r.start && slotStart < r.end);
+
+        // Also: the full duration of the chosen service must not overlap any booking.
+        // (Otherwise a 09:00 slot for a 60-min service collides with an existing 09:30-10:00 booking.)
         const serviceConflict = bookedRanges.some(r => slotStart < r.end && serviceEnd > r.start);
+
         const tooSoon = slotStart < minStartMinutes;
 
         slots.push({
           time,
-          available: insideRange && !isBlocked && !blockTaken && !serviceConflict && !tooSoon,
+          available: insideRange && !isBlocked && !slotTaken && !serviceConflict && !tooSoon,
         });
       }
 
@@ -207,6 +220,7 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
       endTime.setMinutes(endTime.getMinutes() + selectedService.duration_minutes);
       const endTimeStr = `${endTime.getHours().toString().padStart(2, '0')}:${endTime.getMinutes().toString().padStart(2, '0')}`;
 
+      // Re-verify before insert (race condition guard)
       const { data: existingAppointments } = await supabase
         .from('appointments')
         .select('start_time, end_time')
@@ -218,13 +232,13 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
       const slotStart = sh * 60 + sm;
       const slotEnd = slotStart + selectedService.duration_minutes;
       const hasConflict = (existingAppointments || []).some(a => {
-        const [ash, asm] = a.start_time.split(':').map(Number);
-        const [aeh, aem] = a.end_time.split(':').map(Number);
-        return slotStart < (aeh * 60 + aem) && slotEnd > (ash * 60 + asm);
+        const aStart = toMinutes(a.start_time);
+        const aEnd = toMinutes(a.end_time);
+        return slotStart < aEnd && slotEnd > aStart;
       });
 
       if (hasConflict) {
-        setBookingError('Den här tiden är inte längre tillgänglig.');
+        setBookingError('Den här tiden är inte längre tillgänglig. Välj en annan tid.');
         setStep('datetime');
         loadAvailableSlots();
         setBooking(false);
@@ -278,8 +292,6 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
   maxDate.setDate(maxDate.getDate() + 56);
   const maxDateStr = maxDate.toISOString().split('T')[0];
 
-  // When user is not logged in, we render this view WITHOUT the Layout wrapper,
-  // so we need to provide our own page-level container with padding.
   const isGuestMode = !user;
 
   if (loading) {
@@ -318,7 +330,6 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
           <button
             onClick={onShowAuth}
             className="flex items-center gap-2 px-3 py-2 text-sm border border-slate-300 bg-white rounded-lg hover:bg-slate-50 flex-shrink-0"
-            aria-label="Logga in"
           >
             <LogIn className="w-4 h-4" />
             <span className="hidden sm:inline">Logga in</span>
@@ -366,9 +377,7 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
                     <Clock className="w-4 h-4" />
                     <span>{service.duration_minutes} min</span>
                   </div>
-                  <div className="text-slate-900 font-semibold">
-                    {service.base_price} kr
-                  </div>
+                  <div className="text-slate-900 font-semibold">{service.base_price} kr</div>
                 </div>
               </button>
             ))}
@@ -493,7 +502,7 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
                       className={`px-2 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                         slot.available
                           ? 'bg-slate-100 hover:bg-slate-900 hover:text-white text-slate-900'
-                          : 'bg-slate-50 text-slate-300 cursor-not-allowed'
+                          : 'bg-slate-50 text-slate-300 cursor-not-allowed line-through'
                       }`}
                     >
                       {slot.time}
@@ -564,7 +573,7 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
           <p className="text-slate-600 mb-8 text-sm sm:text-base">Vi ses snart.</p>
 
           <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 text-left mb-6 space-y-3">
-            <IconRow icon={Scissors} label="Tjänst" value={confirmedBooking.service.name} />
+            <IconRow icon={MustacheIcon} label="Tjänst" value={confirmedBooking.service.name} />
             <IconRow icon={User} label="Barber" value={confirmedBooking.stylist.profile.full_name} />
             <IconRow
               icon={Calendar}
@@ -591,7 +600,6 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
     </div>
   );
 
-  // Guest mode: wrap in our own page container with proper padding
   if (isGuestMode) {
     return (
       <div className="min-h-screen bg-slate-50">
