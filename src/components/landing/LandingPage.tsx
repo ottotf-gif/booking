@@ -1,8 +1,6 @@
-import { useState, useEffect } from 'react';
-import { Calendar, Clock, User, ArrowRight, Check, LogIn, CheckCircle, ChevronLeft } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { MapPin, Phone, Mail, Instagram, Facebook, Clock, ArrowRight, LogIn, Star } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { useAuth } from '../../contexts/AuthContext';
-import { GuestBookingFlow, type GuestInfo } from './GuestBookingFlow';
 import { MustacheIcon } from '../common/MustacheIcon';
 import type { Database } from '../../lib/database.types';
 
@@ -11,627 +9,383 @@ type Stylist = Database['public']['Tables']['stylists']['Row'] & {
   profile: Database['public']['Tables']['profiles']['Row'];
 };
 
-interface TimeSlot {
-  time: string;
-  available: boolean;
+interface LandingPageProps {
+  onBook: () => void;
+  onLogin: () => void;
 }
 
-interface BookingViewProps {
-  onShowAuth?: () => void;
-  onBackToLanding?: () => void;
-}
+const SHOP = {
+  name: 'Nordic Barber',
+  tagline: 'EST. 2018',
+  hero_title: 'Hantverk med känsla.',
+  hero_subtitle: 'En klassisk barbershop i hjärtat av Göteborg. Skarpa klippningar, varma handdukar, hett stål och hett kaffe.',
+  hero_image: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=2000&q=80',
+  about_image: 'https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?w=1200&q=80',
+  about_title: 'Mer än bara en klippning',
+  about_text:
+    'Hos Nordic Barber tror vi på att varje besök ska vara en paus från vardagen. Våra barbers är hantverkare med passion för detaljer – från den första klippningen till det sista varma handduksdragget.\n\nVi använder bara förstklassiga produkter och tar oss tid att lyssna på vad just du vill ha.',
+  address: 'Storgatan 24, 411 38 Göteborg',
+  phone: '+46 31 123 45 67',
+  email: 'hej@nordicbarber.se',
+  instagram_url: 'https://instagram.com/nordicbarber',
+  facebook_url: 'https://facebook.com/nordicbarber',
+  hours: [
+    { day: 'Måndag – Fredag', time: '09:00 – 18:00' },
+    { day: 'Lördag', time: '10:00 – 16:00' },
+    { day: 'Söndag', time: 'Stängt' },
+  ],
+};
 
-const MIN_LEAD_MINUTES = 30;
+const GALLERY_IMAGES = [
+  'https://images.unsplash.com/photo-1599351431202-1e0f0137899a?w=800&q=80',
+  'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?w=800&q=80',
+  'https://images.unsplash.com/photo-1605497788044-5a32c7078486?w=800&q=80',
+  'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=800&q=80',
+];
 
-export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
-  const { profile, user } = useAuth();
-  const [showGuestFlow, setShowGuestFlow] = useState(false);
-  const [guestInfo, setGuestInfo] = useState<GuestInfo | null>(null);
-  const [step, setStep] = useState<'service' | 'stylist' | 'datetime' | 'confirm' | 'booked'>('service');
-  const [services, setServices] = useState<Service[]>([]);
+const DEFAULT_BARBER_IMAGES = [
+  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=600&q=80',
+  'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=600&q=80',
+  'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=600&q=80',
+  'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=600&q=80',
+];
+
+export function LandingPage({ onBook, onLogin }: LandingPageProps) {
   const [stylists, setStylists] = useState<Stylist[]>([]);
-  const [selectedService, setSelectedService] = useState<Service | null>(null);
-  const [selectedStylist, setSelectedStylist] = useState<Stylist | null>(null);
-  const [selectedDate, setSelectedDate] = useState<string>('');
-  const [selectedTime, setSelectedTime] = useState<string>('');
-  const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([]);
-  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [services, setServices] = useState<Service[]>([]);
+  const [testimonials, setTestimonials] = useState<{ comment: string; rating: number; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingStylists, setLoadingStylists] = useState(false);
-  const [booking, setBooking] = useState(false);
-  const [bookingError, setBookingError] = useState('');
-  const [confirmedBooking, setConfirmedBooking] = useState<{
-    service: Service; stylist: Stylist; date: string; time: string;
-  } | null>(null);
-  const [error, setError] = useState('');
 
-  useEffect(() => { loadServices(); }, []);
-  useEffect(() => { if (selectedService) loadStylists(); }, [selectedService]);
-  useEffect(() => {
-    if (selectedStylist && selectedDate) loadAvailableSlots();
-  }, [selectedStylist, selectedDate]);
+  useEffect(() => { load(); }, []);
 
-  const loadServices = async () => {
+  const load = async () => {
     try {
-      const { data, error } = await supabase
-        .from('services').select('*').eq('active', true).order('name');
-      if (error) throw error;
-      setServices(data || []);
-    } catch (err) { console.error(err); }
-    finally { setLoading(false); }
-  };
+      const [stylistsRes, servicesRes, ratingsRes] = await Promise.all([
+        supabase.from('stylists').select(`*, profile:profiles(*)`).eq('active', true),
+        supabase.from('services').select('*').eq('active', true).order('base_price'),
+        supabase.from('appointment_ratings')
+          .select(`comment, salon_rating, customer:profiles(full_name)`)
+          .not('comment', 'is', null)
+          .gte('salon_rating', 4)
+          .order('created_at', { ascending: false })
+          .limit(3),
+      ]);
 
-  const loadStylists = async () => {
-    setLoadingStylists(true);
-    setError('');
-    try {
-      const { data, error } = await supabase
-        .from('stylists')
-        .select(`*, profile:profiles(*)`)
-        .eq('active', true);
-      if (error) throw error;
-      setStylists((data as any) || []);
-      if (!data || data.length === 0) {
-        setError('Inga barbers tillgängliga just nu.');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Kunde inte ladda barbers');
-    } finally {
-      setLoadingStylists(false);
-    }
-  };
+      setStylists((stylistsRes.data as any) || []);
+      setServices(servicesRes.data || []);
 
-  const toMinutes = (t: string) => {
-    const [h, m] = t.split(':').map(Number);
-    return h * 60 + m;
-  };
-
-  const loadAvailableSlots = async () => {
-    if (!selectedStylist || !selectedDate || !selectedService) return;
-    setLoadingSlots(true);
-
-    try {
-      const selectedDateObj = new Date(selectedDate + 'T00:00:00');
-      const dayOfWeek = selectedDateObj.getDay();
-
-      const { data: availabilityRows } = await supabase
-        .from('stylist_availability')
-        .select('start_time, end_time, is_available')
-        .eq('stylist_id', selectedStylist.id)
-        .eq('day_of_week', dayOfWeek)
-        .eq('is_available', true);
-
-      const workingRanges = (availabilityRows || []).map(r => ({
-        start: toMinutes(r.start_time.substring(0, 5)),
-        end: toMinutes(r.end_time.substring(0, 5)),
+      const ts = ((ratingsRes.data as any) || []).map((r: any) => ({
+        comment: r.comment,
+        rating: r.salon_rating,
+        name: r.customer?.full_name || 'Anonym kund',
       }));
-
-      if (workingRanges.length === 0) {
-        setAvailableSlots([]);
-        setLoadingSlots(false);
-        return;
-      }
-
-      const { data: timeOff } = await supabase
-        .from('stylist_time_off')
-        .select('start_date, end_date')
-        .eq('stylist_id', selectedStylist.id)
-        .lte('start_date', selectedDate)
-        .gte('end_date', selectedDate);
-
-      if (timeOff && timeOff.length > 0) {
-        setAvailableSlots([]);
-        setLoadingSlots(false);
-        return;
-      }
-
-      const { data: blockedSlots } = await supabase
-        .from('blocked_time_slots')
-        .select('time_slot, day_of_week, stylist_id')
-        .eq('active', true)
-        .or(`stylist_id.is.null,stylist_id.eq.${selectedStylist.id}`);
-
-      const blockedTimes = new Set<string>();
-      (blockedSlots || []).forEach(block => {
-        if (block.day_of_week === null || block.day_of_week === dayOfWeek) {
-          blockedTimes.add(block.time_slot.substring(0, 5));
-        }
-      });
-
-      // ============================================================
-      // FIX: Get ALL existing appointments (full minute ranges)
-      // A barber can only have ONE booking per quarter-hour.
-      // ============================================================
-      const { data: existingAppointments } = await supabase
-        .from('appointments')
-        .select('start_time, end_time')
-        .eq('stylist_id', selectedStylist.id)
-        .eq('appointment_date', selectedDate)
-        .neq('status', 'cancelled');
-
-      const bookedRanges = (existingAppointments || []).map(a => ({
-        start: toMinutes(a.start_time),
-        end: toMinutes(a.end_time),
-      }));
-
-      const today = new Date();
-      const todayStr = today.toISOString().split('T')[0];
-      let minStartMinutes = -Infinity;
-      if (selectedDate === todayStr) {
-        const m = today.getHours() * 60 + today.getMinutes() + MIN_LEAD_MINUTES;
-        minStartMinutes = Math.ceil(m / 15) * 15;
-      }
-
-      const overallStart = Math.min(...workingRanges.map(r => r.start));
-      const overallEnd = Math.max(...workingRanges.map(r => r.end));
-
-      const slots: TimeSlot[] = [];
-      for (let m = overallStart; m < overallEnd; m += 15) {
-        const hh = Math.floor(m / 60).toString().padStart(2, '0');
-        const mm = (m % 60).toString().padStart(2, '0');
-        const time = `${hh}:${mm}`;
-        const slotStart = m;
-        const serviceEnd = m + selectedService.duration_minutes;
-
-        // Must fit inside ONE working range (excludes lunch gaps)
-        const insideRange = workingRanges.some(r => slotStart >= r.start && serviceEnd <= r.end);
-
-        const isBlocked = blockedTimes.has(time);
-
-        // CRITICAL: The slot is taken if the QUARTER itself falls inside any existing booking.
-        // This is the bug fix: a slot at 09:15 must be blocked if a booking exists 09:00-09:30.
-        const slotTaken = bookedRanges.some(r => slotStart >= r.start && slotStart < r.end);
-
-        // Also: the full duration of the chosen service must not overlap any booking.
-        // (Otherwise a 09:00 slot for a 60-min service collides with an existing 09:30-10:00 booking.)
-        const serviceConflict = bookedRanges.some(r => slotStart < r.end && serviceEnd > r.start);
-
-        const tooSoon = slotStart < minStartMinutes;
-
-        slots.push({
-          time,
-          available: insideRange && !isBlocked && !slotTaken && !serviceConflict && !tooSoon,
-        });
-      }
-
-      setAvailableSlots(slots);
-    } catch (err) {
-      console.error(err);
-      setAvailableSlots([]);
+      setTestimonials(ts);
+    } catch (e) {
+      console.error('Landing load error', e);
     } finally {
-      setLoadingSlots(false);
+      setLoading(false);
     }
   };
-
-  const handleBooking = async () => {
-    if (!selectedService || !selectedStylist || !selectedDate || !selectedTime) return;
-
-    const customerId = profile?.id;
-    if (!customerId && !guestInfo) {
-      setShowGuestFlow(true);
-      return;
-    }
-
-    setBooking(true);
-    setBookingError('');
-
-    try {
-      const endTime = new Date(`2000-01-01T${selectedTime}`);
-      endTime.setMinutes(endTime.getMinutes() + selectedService.duration_minutes);
-      const endTimeStr = `${endTime.getHours().toString().padStart(2, '0')}:${endTime.getMinutes().toString().padStart(2, '0')}`;
-
-      // Re-verify before insert (race condition guard)
-      const { data: existingAppointments } = await supabase
-        .from('appointments')
-        .select('start_time, end_time')
-        .eq('stylist_id', selectedStylist.id)
-        .eq('appointment_date', selectedDate)
-        .neq('status', 'cancelled');
-
-      const [sh, sm] = selectedTime.split(':').map(Number);
-      const slotStart = sh * 60 + sm;
-      const slotEnd = slotStart + selectedService.duration_minutes;
-      const hasConflict = (existingAppointments || []).some(a => {
-        const aStart = toMinutes(a.start_time);
-        const aEnd = toMinutes(a.end_time);
-        return slotStart < aEnd && slotEnd > aStart;
-      });
-
-      if (hasConflict) {
-        setBookingError('Den här tiden är inte längre tillgänglig. Välj en annan tid.');
-        setStep('datetime');
-        loadAvailableSlots();
-        setBooking(false);
-        return;
-      }
-
-      const appointmentData: any = {
-        stylist_id: selectedStylist.id,
-        service_id: selectedService.id,
-        appointment_date: selectedDate,
-        start_time: selectedTime,
-        end_time: endTimeStr,
-        status: 'confirmed',
-        total_amount: selectedService.base_price,
-        deposit_amount: selectedService.base_price * 0.2,
-        payment_status: 'pending',
-      };
-      if (customerId) {
-        appointmentData.customer_id = customerId;
-        appointmentData.is_guest_booking = false;
-      } else if (guestInfo) {
-        appointmentData.customer_id = null;
-        appointmentData.is_guest_booking = true;
-        appointmentData.guest_name = guestInfo.fullName;
-        appointmentData.guest_email = guestInfo.email;
-        appointmentData.guest_phone = guestInfo.phone;
-      }
-
-      const { error } = await supabase.from('appointments').insert(appointmentData);
-      if (error) throw error;
-
-      setConfirmedBooking({ service: selectedService, stylist: selectedStylist, date: selectedDate, time: selectedTime });
-      setStep('booked');
-      setShowGuestFlow(false);
-      setGuestInfo(null);
-    } catch (err: any) {
-      setBookingError(err.message || 'Kunde inte skapa bokningen');
-    } finally {
-      setBooking(false);
-    }
-  };
-
-  const handleGuestInfoSubmit = (info: GuestInfo) => {
-    setGuestInfo(info);
-    setShowGuestFlow(false);
-  };
-
-  const today = new Date();
-  const minDateStr = today.toISOString().split('T')[0];
-  const maxDate = new Date();
-  maxDate.setDate(maxDate.getDate() + 56);
-  const maxDateStr = maxDate.toISOString().split('T')[0];
-
-  const isGuestMode = !user;
 
   if (loading) {
     return (
-      <div className={isGuestMode ? 'min-h-screen bg-slate-50 flex items-center justify-center px-4' : 'flex items-center justify-center h-64'}>
-        <div className="text-slate-600">Laddar...</div>
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center">
+        <div className="text-stone-600">Laddar...</div>
       </div>
     );
   }
 
-  if (showGuestFlow) {
-    return (
-      <GuestBookingFlow
-        onGuestInfoSubmit={handleGuestInfoSubmit}
-        onCancel={() => setShowGuestFlow(false)}
-      />
-    );
-  }
-
-  const content = (
-    <div className="max-w-4xl mx-auto">
-      <div className="flex items-start justify-between mb-5 sm:mb-6 gap-3">
-        <div className="min-w-0">
-          {onBackToLanding && (
-            <button
-              onClick={onBackToLanding}
-              className="flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900 mb-2 -ml-1"
-            >
-              <ChevronLeft className="w-4 h-4" /> Tillbaka
-            </button>
-          )}
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-1">Boka tid</h1>
-          <p className="text-slate-600 text-sm sm:text-base">Välj tjänst, barber och tid</p>
-        </div>
-        {!user && onShowAuth && (
-          <button
-            onClick={onShowAuth}
-            className="flex items-center gap-2 px-3 py-2 text-sm border border-slate-300 bg-white rounded-lg hover:bg-slate-50 flex-shrink-0"
-          >
-            <LogIn className="w-4 h-4" />
-            <span className="hidden sm:inline">Logga in</span>
-          </button>
-        )}
-      </div>
-
-      <div className="flex items-center justify-center mb-5 sm:mb-8 overflow-x-auto">
-        <div className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
-          {[
-            { id: 'service', label: 'Tjänst', done: !!selectedService },
-            { id: 'stylist', label: 'Barber', done: !!selectedStylist },
-            { id: 'datetime', label: 'Tid', done: !!(selectedDate && selectedTime) },
-            { id: 'confirm', label: 'Klart', done: false },
-          ].map((s, i, arr) => (
-            <div key={s.id} className="flex items-center gap-1 sm:gap-2">
-              <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm font-medium ${
-                step === s.id ? 'bg-slate-900 text-white' : s.done ? 'bg-slate-700 text-white' : 'bg-slate-200 text-slate-600'
-              }`}>
-                {s.done && step !== s.id ? <Check className="w-4 h-4" /> : i + 1}
-              </div>
-              <span className="font-medium text-slate-700 hidden sm:inline">{s.label}</span>
-              {i < arr.length - 1 && <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 text-slate-400 mx-0.5 sm:mx-1" />}
+  return (
+    <div className="min-h-screen bg-stone-50">
+      <header className="bg-white border-b border-stone-200 sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="bg-stone-900 p-2 rounded-md flex-shrink-0">
+              <MustacheIcon className="w-4 h-4 text-white" />
             </div>
-          ))}
-        </div>
-      </div>
-
-      {step === 'service' && (
-        <div>
-          <h2 className="text-lg sm:text-xl font-semibold text-slate-900 mb-4">Välj tjänst</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-            {services.map((service) => (
-              <button
-                key={service.id}
-                onClick={() => { setSelectedService(service); setStep('stylist'); }}
-                className="bg-white border-2 border-slate-200 rounded-lg p-4 sm:p-5 text-left hover:border-slate-900 hover:shadow-sm transition-all"
-              >
-                <h3 className="text-base sm:text-lg font-semibold text-slate-900 mb-1">{service.name}</h3>
-                {service.description && (
-                  <p className="text-slate-600 text-sm mb-3 line-clamp-2">{service.description}</p>
-                )}
-                <div className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-1 text-slate-600">
-                    <Clock className="w-4 h-4" />
-                    <span>{service.duration_minutes} min</span>
-                  </div>
-                  <div className="text-slate-900 font-semibold">{service.base_price} kr</div>
-                </div>
-              </button>
-            ))}
+            <div className="min-w-0">
+              <p className="text-sm sm:text-base font-bold text-stone-900 leading-none tracking-wide uppercase">{SHOP.name}</p>
+              <p className="text-[10px] sm:text-xs text-stone-500 tracking-widest leading-tight mt-0.5">{SHOP.tagline}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onLogin}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-2 text-sm text-stone-700 hover:text-stone-900"
+            >
+              <LogIn className="w-4 h-4" /> Logga in
+            </button>
+            <button
+              onClick={onBook}
+              className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-stone-900 text-white rounded-md hover:bg-stone-800 transition-colors text-sm font-semibold"
+            >
+              Boka tid
+              <ArrowRight className="w-4 h-4 hidden sm:inline" />
+            </button>
           </div>
         </div>
-      )}
+      </header>
 
-      {step === 'stylist' && (
-        <div>
-          <h2 className="text-lg sm:text-xl font-semibold text-slate-900 mb-4">Välj barber</h2>
-
-          {error && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
-              <p className="text-amber-800 text-sm">{error}</p>
-            </div>
-          )}
-
-          {loadingStylists ? (
-            <div className="bg-white rounded-lg border border-slate-200 p-12 text-center">
-              <div className="animate-pulse flex flex-col items-center">
-                <User className="w-16 h-16 text-slate-400 mb-4" />
-                <p className="text-slate-600">Laddar barbers...</p>
+      <section className="relative">
+        <div className="relative h-[65vh] sm:h-[75vh] min-h-[480px] overflow-hidden">
+          <img src={SHOP.hero_image} alt={SHOP.name} className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/30" />
+          <div className="absolute inset-0 flex items-end pb-12 sm:items-center sm:pb-0">
+            <div className="max-w-7xl mx-auto px-5 sm:px-6 lg:px-8 w-full">
+              <div className="max-w-2xl text-white">
+                <p className="text-xs sm:text-sm tracking-[0.3em] uppercase mb-4 sm:mb-6 opacity-90 font-medium">
+                  Klassisk barbering · Göteborg
+                </p>
+                <h1 className="text-4xl sm:text-6xl lg:text-7xl font-bold mb-4 sm:mb-6 leading-[1.05] tracking-tight">
+                  {SHOP.hero_title}
+                </h1>
+                <p className="text-base sm:text-lg mb-6 sm:mb-8 opacity-90 max-w-xl leading-relaxed">
+                  {SHOP.hero_subtitle}
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button
+                    onClick={onBook}
+                    className="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-white text-stone-900 rounded-md hover:bg-stone-100 transition-colors font-semibold shadow-lg"
+                  >
+                    Boka tid nu
+                    <ArrowRight className="w-5 h-5" />
+                  </button>
+                  <a
+                    href="#tjanster"
+                    className="inline-flex items-center justify-center gap-2 px-6 py-3.5 border border-white/30 text-white rounded-md hover:bg-white/10 transition-colors font-semibold backdrop-blur-sm"
+                  >
+                    Se tjänster
+                  </a>
+                </div>
               </div>
             </div>
-          ) : stylists.length === 0 ? (
-            <div className="bg-white rounded-lg border border-slate-200 p-12 text-center">
-              <User className="w-16 h-16 text-slate-400 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">Inga barbers tillgängliga</h3>
-              <p className="text-slate-600">Kontakta salongen för hjälp.</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="py-16 sm:py-24 lg:py-32 bg-white">
+        <div className="max-w-7xl mx-auto px-5 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-center">
+            <div className="order-2 lg:order-1">
+              <p className="text-xs tracking-[0.25em] uppercase text-stone-500 mb-3 font-medium">Om oss</p>
+              <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-stone-900 mb-6 leading-tight tracking-tight">
+                {SHOP.about_title}
+              </h2>
+              <div className="space-y-4 text-stone-600 text-base sm:text-lg leading-relaxed whitespace-pre-line">
+                {SHOP.about_text}
+              </div>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-              {stylists.map((stylist) => (
-                <button
-                  key={stylist.id}
-                  onClick={() => { setSelectedStylist(stylist); setStep('datetime'); }}
-                  className="bg-white border-2 border-slate-200 rounded-lg p-4 sm:p-5 text-left hover:border-slate-900 hover:shadow-sm transition-all"
-                >
-                  <div className="flex items-center gap-3 mb-2">
-                    {stylist.profile.avatar_url ? (
-                      <img
-                        src={stylist.profile.avatar_url}
-                        alt={stylist.profile.full_name}
-                        className="w-12 h-12 rounded-full object-cover flex-shrink-0"
-                      />
-                    ) : (
-                      <div className="w-12 h-12 bg-slate-900 rounded-full flex items-center justify-center flex-shrink-0">
-                        <User className="w-6 h-6 text-white" />
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-base sm:text-lg font-semibold text-slate-900 truncate">
-                        {stylist.profile.full_name}
-                      </h3>
-                      {stylist.specializations.length > 0 && (
-                        <p className="text-xs sm:text-sm text-slate-600 truncate">
-                          {stylist.specializations.join(', ')}
-                        </p>
-                      )}
-                    </div>
+            <div className="order-1 lg:order-2">
+              <div className="aspect-[4/5] rounded-lg overflow-hidden shadow-xl">
+                <img src={SHOP.about_image} alt="Inne i salongen" className="w-full h-full object-cover" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {stylists.length > 0 && (
+        <section className="py-16 sm:py-24 lg:py-32 bg-stone-50">
+          <div className="max-w-7xl mx-auto px-5 sm:px-6 lg:px-8">
+            <div className="text-center mb-10 sm:mb-16">
+              <p className="text-xs tracking-[0.25em] uppercase text-stone-500 mb-3 font-medium">Teamet</p>
+              <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-stone-900 mb-3 tracking-tight">
+                Möt våra barbers
+              </h2>
+              <p className="text-stone-600 max-w-xl mx-auto">Erfarna hantverkare med passion för varje detalj</p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-8">
+              {stylists.map((s, idx) => (
+                <div key={s.id} className="group">
+                  <div className="aspect-[4/5] rounded-lg overflow-hidden bg-stone-200 mb-4 shadow-md">
+                    <img
+                      src={s.profile.avatar_url || DEFAULT_BARBER_IMAGES[idx % DEFAULT_BARBER_IMAGES.length]}
+                      alt={s.profile.full_name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
                   </div>
-                  {stylist.bio && (
-                    <p className="text-slate-600 text-sm line-clamp-2">{stylist.bio}</p>
+                  <h3 className="text-xl font-bold text-stone-900 mb-1">{s.profile.full_name}</h3>
+                  {s.specializations.length > 0 && (
+                    <p className="text-xs text-stone-500 uppercase tracking-wider mb-2 font-medium">
+                      {s.specializations.slice(0, 3).join(' · ')}
+                    </p>
                   )}
-                </button>
+                  {s.bio && (
+                    <p className="text-sm text-stone-600 line-clamp-3 mb-3 leading-relaxed">{s.bio}</p>
+                  )}
+                  {(s as any).instagram_handle && (
+                    <a
+                      href={`https://instagram.com/${(s as any).instagram_handle}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-sm text-stone-700 hover:text-stone-900"
+                    >
+                      <Instagram className="w-4 h-4" />
+                      @{(s as any).instagram_handle}
+                    </a>
+                  )}
+                </div>
               ))}
             </div>
-          )}
-
-          <button
-            onClick={() => setStep('service')}
-            className="mt-4 sm:mt-6 flex items-center gap-1 px-2 py-2 text-slate-700 hover:text-slate-900 font-medium text-sm -ml-2"
-          >
-            <ChevronLeft className="w-4 h-4" /> Tillbaka
-          </button>
-        </div>
+          </div>
+        </section>
       )}
 
-      {step === 'datetime' && (
-        <div>
-          <h2 className="text-lg sm:text-xl font-semibold text-slate-900 mb-4">Välj datum och tid</h2>
-
-          {bookingError && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-              <p className="text-red-800 text-sm">{bookingError}</p>
-            </div>
-          )}
-
-          <div className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6 mb-4">
-            <label className="block text-sm font-medium text-slate-700 mb-2">Datum</label>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => { setSelectedDate(e.target.value); setSelectedTime(''); }}
-              min={minDateStr}
-              max={maxDateStr}
-              className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent text-base"
-            />
+      <section className="grid grid-cols-2 md:grid-cols-4">
+        {GALLERY_IMAGES.map((img, i) => (
+          <div key={i} className="aspect-square overflow-hidden">
+            <img src={img} alt="" className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
           </div>
+        ))}
+      </section>
 
-          {selectedDate && (
-            <div className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6">
-              <h3 className="text-sm font-medium text-slate-700 mb-3">Lediga tider</h3>
-              {loadingSlots ? (
-                <p className="text-slate-600 text-sm py-4 text-center">Laddar lediga tider...</p>
-              ) : availableSlots.length === 0 ? (
-                <div className="text-center py-6">
-                  <p className="text-slate-600 text-sm">Barbern jobbar inte denna dag, eller är ledig.</p>
-                  <p className="text-slate-500 text-xs mt-1">Välj ett annat datum.</p>
+      {services.length > 0 && (
+        <section id="tjanster" className="py-16 sm:py-24 lg:py-32 bg-white">
+          <div className="max-w-4xl mx-auto px-5 sm:px-6 lg:px-8">
+            <div className="text-center mb-10 sm:mb-16">
+              <p className="text-xs tracking-[0.25em] uppercase text-stone-500 mb-3 font-medium">Pris</p>
+              <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-stone-900 mb-3 tracking-tight">
+                Tjänster
+              </h2>
+              <p className="text-stone-600 max-w-xl mx-auto">Alla våra behandlingar</p>
+            </div>
+            <div className="space-y-1">
+              {services.map(s => (
+                <div key={s.id} className="flex items-center justify-between py-4 sm:py-5 border-b border-stone-200 gap-3">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-semibold text-stone-900 text-base sm:text-lg">{s.name}</h3>
+                    {s.description && (
+                      <p className="text-sm text-stone-500 line-clamp-1 mt-0.5">{s.description}</p>
+                    )}
+                    <p className="text-xs text-stone-400 mt-1 flex items-center gap-1">
+                      <Clock className="w-3 h-3" /> {s.duration_minutes} min
+                    </p>
+                  </div>
+                  <div className="text-lg sm:text-xl font-bold text-stone-900 flex-shrink-0 whitespace-nowrap">
+                    {s.base_price} kr
+                  </div>
                 </div>
-              ) : availableSlots.every(s => !s.available) ? (
-                <div className="text-center py-6">
-                  <p className="text-slate-600 text-sm">Alla tider är fullbokade denna dag.</p>
+              ))}
+            </div>
+            <div className="text-center mt-10">
+              <button
+                onClick={onBook}
+                className="inline-flex items-center gap-2 px-6 py-3.5 bg-stone-900 text-white rounded-md hover:bg-stone-800 transition-colors font-semibold"
+              >
+                Se lediga tider
+                <ArrowRight className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {testimonials.length > 0 && (
+        <section className="py-16 sm:py-24 lg:py-32 bg-stone-100">
+          <div className="max-w-5xl mx-auto px-5 sm:px-6 lg:px-8">
+            <div className="text-center mb-10 sm:mb-14">
+              <p className="text-xs tracking-[0.25em] uppercase text-stone-500 mb-3 font-medium">Recensioner</p>
+              <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-stone-900 mb-3 tracking-tight">
+                Vad våra kunder säger
+              </h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 sm:gap-6">
+              {testimonials.map((t, i) => (
+                <div key={i} className="bg-white rounded-lg p-5 sm:p-6 shadow-sm">
+                  <div className="flex items-center gap-0.5 mb-3">
+                    {[1,2,3,4,5].map(n => (
+                      <Star key={n} className={`w-4 h-4 ${n <= t.rating ? 'fill-amber-400 text-amber-400' : 'text-stone-300'}`} />
+                    ))}
+                  </div>
+                  <p className="text-stone-700 leading-relaxed mb-4">"{t.comment}"</p>
+                  <p className="text-sm font-semibold text-stone-900">— {t.name}</p>
                 </div>
-              ) : (
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-                  {availableSlots.map((slot) => (
-                    <button
-                      key={slot.time}
-                      onClick={() => { if (slot.available) { setSelectedTime(slot.time); setStep('confirm'); } }}
-                      disabled={!slot.available}
-                      className={`px-2 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                        slot.available
-                          ? 'bg-slate-100 hover:bg-slate-900 hover:text-white text-slate-900'
-                          : 'bg-slate-50 text-slate-300 cursor-not-allowed line-through'
-                      }`}
-                    >
-                      {slot.time}
-                    </button>
-                  ))}
-                </div>
-              )}
+              ))}
             </div>
-          )}
-
-          <button
-            onClick={() => setStep('stylist')}
-            className="mt-4 flex items-center gap-1 px-2 py-2 text-slate-700 hover:text-slate-900 font-medium text-sm -ml-2"
-          >
-            <ChevronLeft className="w-4 h-4" /> Tillbaka
-          </button>
-        </div>
+          </div>
+        </section>
       )}
 
-      {step === 'confirm' && selectedService && selectedStylist && (
-        <div>
-          <h2 className="text-lg sm:text-xl font-semibold text-slate-900 mb-4">Bekräfta bokning</h2>
+      <section className="py-16 sm:py-24 lg:py-32 bg-stone-900 text-white">
+        <div className="max-w-7xl mx-auto px-5 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16">
+            <div>
+              <p className="text-xs tracking-[0.25em] uppercase text-stone-400 mb-3 font-medium">Hitta hit</p>
+              <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-6 tracking-tight">Välkommen in</h2>
+              <p className="text-stone-300 text-base sm:text-lg mb-8 leading-relaxed">
+                Kom förbi för en kopp kaffe och se salongen. Vi ses!
+              </p>
 
-          {bookingError && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-              <p className="text-red-800 text-sm">{bookingError}</p>
+              <div className="space-y-5">
+                <ContactItem icon={MapPin} label="Adress" value={SHOP.address} />
+                <ContactItem icon={Phone} label="Telefon" value={SHOP.phone} href={`tel:${SHOP.phone.replace(/\s/g,'')}`} />
+                <ContactItem icon={Mail} label="E-post" value={SHOP.email} href={`mailto:${SHOP.email}`} />
+              </div>
+
+              <div className="flex items-center gap-3 mt-8">
+                {SHOP.instagram_url && (
+                  <a
+                    href={SHOP.instagram_url}
+                    target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 rounded-md transition-colors text-sm font-medium"
+                  >
+                    <Instagram className="w-4 h-4" /> Instagram
+                  </a>
+                )}
+                {SHOP.facebook_url && (
+                  <a
+                    href={SHOP.facebook_url}
+                    target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 rounded-md transition-colors text-sm font-medium"
+                  >
+                    <Facebook className="w-4 h-4" /> Facebook
+                  </a>
+                )}
+              </div>
             </div>
-          )}
 
-          <div className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6 mb-4 space-y-3">
-            <Row label="Tjänst" value={selectedService.name} />
-            <Row label="Barber" value={selectedStylist.profile.full_name} />
-            <Row
-              label="Datum & tid"
-              value={`${new Date(selectedDate + 'T00:00:00').toLocaleDateString('sv-SE', { weekday: 'long', day: 'numeric', month: 'long' })} kl. ${selectedTime}`}
-            />
-            <Row label="Längd" value={`${selectedService.duration_minutes} minuter`} />
-            <div className="pt-3 border-t border-slate-200">
-              <span className="text-sm text-slate-600">Totalt</span>
-              <p className="text-xl sm:text-2xl font-bold text-slate-900">{selectedService.base_price} kr</p>
-            </div>
-          </div>
-
-          <div className="flex gap-3">
-            <button
-              onClick={() => setStep('datetime')}
-              className="flex-1 px-4 py-3 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 font-medium"
-            >
-              Tillbaka
-            </button>
-            <button
-              onClick={handleBooking}
-              disabled={booking}
-              className="flex-1 px-4 py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50 font-medium"
-            >
-              {booking ? 'Bokar...' : !user && !guestInfo ? 'Fortsätt' : 'Bekräfta'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {step === 'booked' && confirmedBooking && (
-        <div className="max-w-lg mx-auto text-center py-6 sm:py-8">
-          <div className="w-16 h-16 sm:w-20 sm:h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <CheckCircle className="w-8 h-8 sm:w-10 sm:h-10 text-green-600" />
-          </div>
-          <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">Bokningen är bekräftad!</h2>
-          <p className="text-slate-600 mb-8 text-sm sm:text-base">Vi ses snart.</p>
-
-          <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 text-left mb-6 space-y-3">
-            <IconRow icon={MustacheIcon} label="Tjänst" value={confirmedBooking.service.name} />
-            <IconRow icon={User} label="Barber" value={confirmedBooking.stylist.profile.full_name} />
-            <IconRow
-              icon={Calendar}
-              label="Datum & tid"
-              value={`${new Date(confirmedBooking.date + 'T00:00:00').toLocaleDateString('sv-SE', { weekday: 'long', day: 'numeric', month: 'long' })} kl. ${confirmedBooking.time}`}
-            />
-            <div className="pt-3 border-t border-slate-100">
-              <p className="text-xs text-slate-500">Totalt</p>
-              <p className="text-lg font-bold text-slate-900">{confirmedBooking.service.base_price} kr</p>
+            <div className="bg-white/5 border border-white/10 rounded-lg p-6 sm:p-8">
+              <div className="flex items-center gap-2 mb-4">
+                <Clock className="w-5 h-5 text-stone-400" />
+                <h3 className="text-xl font-bold">Öppettider</h3>
+              </div>
+              <div className="divide-y divide-white/10">
+                {SHOP.hours.map((h, i) => (
+                  <div key={i} className="flex items-center justify-between py-3">
+                    <span className="text-stone-300">{h.day}</span>
+                    <span className="font-medium">{h.time}</span>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={onBook}
+                className="w-full mt-6 inline-flex items-center justify-center gap-2 px-5 py-3 bg-white text-stone-900 rounded-md hover:bg-stone-100 transition-colors font-semibold"
+              >
+                Boka tid
+                <ArrowRight className="w-4 h-4" />
+              </button>
             </div>
           </div>
-
-          <button
-            onClick={() => {
-              setStep('service'); setSelectedService(null); setSelectedStylist(null);
-              setSelectedDate(''); setSelectedTime(''); setConfirmedBooking(null);
-            }}
-            className="px-6 py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 font-medium"
-          >
-            Boka en till
-          </button>
         </div>
-      )}
-    </div>
-  );
+      </section>
 
-  if (isGuestMode) {
-    return (
-      <div className="min-h-screen bg-slate-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
-          {content}
-        </div>
-      </div>
-    );
-  }
-
-  return content;
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <span className="text-xs sm:text-sm text-slate-600">{label}</span>
-      <p className="text-base sm:text-lg font-semibold text-slate-900">{value}</p>
+      <footer className="py-6 sm:py-8 bg-stone-900 border-t border-stone-800 text-stone-500 text-sm text-center">
+        © {new Date().getFullYear()} {SHOP.name}. Alla rättigheter förbehållna.
+      </footer>
     </div>
   );
 }
 
-function IconRow({ icon: Icon, label, value }: { icon: any; label: string; value: string }) {
-  return (
-    <div className="flex items-start gap-3">
-      <div className="w-9 h-9 bg-slate-100 rounded-lg flex items-center justify-center flex-shrink-0">
-        <Icon className="w-5 h-5 text-slate-700" />
+function ContactItem({ icon: Icon, label, value, href }: { icon: any; label: string; value: string; href?: string }) {
+  const inner = (
+    <div className="flex items-start gap-3 group">
+      <div className="w-10 h-10 bg-white/10 rounded-md flex items-center justify-center flex-shrink-0 group-hover:bg-white/20 transition-colors">
+        <Icon className="w-4 h-4" />
       </div>
-      <div className="min-w-0">
-        <p className="text-xs text-slate-500">{label}</p>
-        <p className="font-semibold text-slate-900">{value}</p>
+      <div>
+        <p className="text-xs uppercase tracking-wider text-stone-400">{label}</p>
+        <p className="text-base font-medium mt-0.5">{value}</p>
       </div>
     </div>
   );
+  return href ? <a href={href}>{inner}</a> : inner;
 }
