@@ -113,12 +113,30 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
 
       const { data: timeOff } = await supabase
         .from('stylist_time_off')
-        .select('start_date, end_date')
+        .select('start_date, end_date, start_time, end_time')
         .eq('stylist_id', selectedStylist.id)
         .lte('start_date', selectedDate)
         .gte('end_date', selectedDate);
 
-      if (timeOff && timeOff.length > 0) {
+      // Build set of quarter-hour minute marks that are blocked by partial-day time off.
+      // A row with NULL start_time/end_time = full day off.
+      let fullDayOff = false;
+      const timeOffBlockedMinutes = new Set<number>();
+      (timeOff || []).forEach((t: any) => {
+        if (!t.start_time || !t.end_time) {
+          fullDayOff = true;
+          return;
+        }
+        const [sh, sm] = t.start_time.split(':').map(Number);
+        const [eh, em] = t.end_time.split(':').map(Number);
+        const startMin = sh * 60 + sm;
+        const endMin = eh * 60 + em;
+        for (let m = startMin; m < endMin; m += 15) {
+          timeOffBlockedMinutes.add(m);
+        }
+      });
+
+      if (fullDayOff) {
         setAvailableSlots([]);
         setLoadingSlots(false);
         return;
@@ -174,9 +192,19 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
         const serviceConflict = bookedRanges.some(r => slotStart < r.end && serviceEnd > r.start);
         const tooSoon = slotStart < minStartMinutes;
 
+        // Partial-day time off: any quarter within the time-off range or any
+        // quarter the service would overlap into it.
+        const inTimeOff = (() => {
+          if (timeOffBlockedMinutes.size === 0) return false;
+          for (let m = slotStart; m < serviceEnd; m += 15) {
+            if (timeOffBlockedMinutes.has(m)) return true;
+          }
+          return false;
+        })();
+
         slots.push({
           time,
-          available: insideRange && !isBlocked && !slotTaken && !serviceConflict && !tooSoon,
+          available: insideRange && !isBlocked && !slotTaken && !serviceConflict && !tooSoon && !inTimeOff,
         });
       }
 
