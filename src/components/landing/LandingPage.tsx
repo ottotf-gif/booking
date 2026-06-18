@@ -18,20 +18,25 @@ interface LandingPageProps {
 // ============================================================================
 const SHOP = {
   name: 'City Barbershop',
-  tagline: "Men's Only · EST. 1985",
+  city: 'Kungälv',
+  logo_url: 'https://scontent-arn2-1.xx.fbcdn.net/v/t39.30808-1/294642344_386821990221398_8229610546796604894_n.png?stp=dst-png&cstp=mx500x500&ctp=s480x480&_nc_cat=101&ccb=1-7&_nc_sid=2d3e12&_nc_ohc=FM4UCDRkgS0Q7kNvwHV02qE&_nc_oc=AdpOGJuXI5Gq4vTAOj_EnhHWB3obsibWSNIYHsWPLTje_OQSgh4UHYjssDRgBrAaalgHf65PoRA9JjlW0LEX7vM5&_nc_zt=24&_nc_ht=scontent-arn2-1.xx&_nc_gid=ioVJxcVyb1UMyRWdRvtF4A&_nc_ss=7b2a8&oh=00_Af8-Gubcx10L7kGF2Ct-IamBdb8Cgjva7U_0Tp_6VbzTeQ&oe=6A3A2D7C',
   hero_image: 'https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=2000&q=85',
   about_image: 'https://images.unsplash.com/photo-1622287162716-f311baa1a2b8?w=1200&q=85',
-  about_title: 'Klassisk barbering. Hantverk sedan generationer.',
+  about_title: 'Klippning, skägg och rakning – på vårt sätt.',
   about_text:
-    'Vi är en traditionell barbershop i hjärtat av Kungälv. Här kan du klippa dig, raka eller bara koppla av en stund med en kaffe i handen.\n\nVåra barbers är hantverkare – vi tar oss tid, lyssnar på vad du vill ha och ser till att du lämnar stolen nöjd.',
+    'Vi är en barbershop på Västra Gatan i Kungälv. Drop-in eller boka tid – båda funkar.\n\nDu får en ordentlig klippning, lugn stämning och en kopp kaffe om du vill.',
   address: 'Västra Gatan 66, 442 31 Kungälv',
   phone: '+46 303 816 30',
   email: 'city.barbershop7@gmail.com',
   facebook_url: 'https://www.facebook.com/p/City-Barbershop-Fris%C3%B6r-Kung%C3%A4lv-100066808011345/',
   hours: [
-    { day: 'Mån – Fre', time: '09:00 – 18:00' },
-    { day: 'Lördag',    time: '10:00 – 15:00' },
-    { day: 'Söndag',    time: 'Stängt' },
+    { day: 'Måndag',  time: '10:00 – 19:00' },
+    { day: 'Tisdag',  time: '10:00 – 19:00' },
+    { day: 'Onsdag',  time: '10:00 – 19:00' },
+    { day: 'Torsdag', time: '10:00 – 19:00' },
+    { day: 'Fredag',  time: '10:00 – 19:00' },
+    { day: 'Lördag',  time: '10:00 – 16:00' },
+    { day: 'Söndag',  time: '11:00 – 16:00' },
   ],
 };
 
@@ -100,15 +105,19 @@ export function LandingPage({ onBook, onLogin }: LandingPageProps) {
     <div className="min-h-screen bg-white font-sans text-barber-ink">
       {/* =================== HEADER =================== */}
       <header className="bg-white border-b border-barber-line sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="bg-barber-red w-1 h-9 rounded-sm flex-shrink-0" />
-            <div className="min-w-0">
-              <p className="font-display text-base sm:text-lg font-bold tracking-wide-2 uppercase leading-none text-barber-black">
+            <img
+              src={SHOP.logo_url}
+              alt={SHOP.name}
+              className="h-12 sm:h-14 w-auto flex-shrink-0"
+            />
+            <div className="hidden sm:block min-w-0 border-l border-barber-line pl-3">
+              <p className="font-display text-base font-bold tracking-wide-2 uppercase leading-none text-barber-black">
                 {SHOP.name}
               </p>
-              <p className="text-[10px] sm:text-xs text-barber-stone tracking-wide-4 uppercase leading-tight mt-0.5">
-                Kungälv
+              <p className="text-[10px] text-barber-stone tracking-wide-4 uppercase leading-tight mt-0.5">
+                {SHOP.city}
               </p>
             </div>
           </div>
@@ -138,11 +147,10 @@ export function LandingPage({ onBook, onLogin }: LandingPageProps) {
           <div className="absolute inset-0 flex items-end pb-12 sm:items-center sm:pb-0">
             <div className="max-w-7xl mx-auto px-5 sm:px-6 lg:px-8 w-full">
               <div className="max-w-3xl text-white">
-                {/* Red accent line */}
                 <div className="flex items-center gap-3 mb-5 sm:mb-6">
                   <div className="w-12 h-0.5 bg-barber-red" />
                   <p className="text-xs sm:text-sm tracking-wide-4 uppercase font-medium text-barber-red">
-                    {SHOP.tagline}
+                    Kungälv
                   </p>
                 </div>
 
@@ -153,7 +161,7 @@ export function LandingPage({ onBook, onLogin }: LandingPageProps) {
                 </h1>
 
                 <p className="text-base sm:text-lg mb-7 sm:mb-9 max-w-xl leading-relaxed text-white/85">
-                  Klassisk barbering i Kungälv. Skarpa klippningar, klassisk rakning – och en kopp kaffe på huset.
+                  Klippning, skäggtrim och rakning på Västra Gatan. Boka tid eller titta förbi.
                 </p>
 
                 <div className="flex flex-col sm:flex-row gap-3">
@@ -183,7 +191,7 @@ export function LandingPage({ onBook, onLogin }: LandingPageProps) {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-8">
             <InfoBar icon={MapPin} label="Adress" value={SHOP.address} />
             <InfoBar icon={Phone} label="Telefon" value={SHOP.phone} href={`tel:${SHOP.phone.replace(/\s/g,'')}`} />
-            <InfoBar icon={Clock} label="Öppettider" value="Mån–Fre 09–18 · Lör 10–15" />
+            <InfoBar icon={Clock} label="Idag" value="10:00 – 19:00" />
           </div>
         </div>
       </section>
@@ -224,9 +232,8 @@ export function LandingPage({ onBook, onLogin }: LandingPageProps) {
                 <div className="w-10 h-0.5 bg-barber-red" />
               </div>
               <h2 className="font-display tracking-wide-2 uppercase text-3xl sm:text-4xl lg:text-5xl font-bold mb-3">
-                Möt våra barbers
+                Våra barbers
               </h2>
-              <p className="text-white/60 max-w-xl mx-auto">Hantverkare med passion för varje detalj</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-8">
               {stylists.map((s, idx) => (
@@ -355,9 +362,6 @@ export function LandingPage({ onBook, onLogin }: LandingPageProps) {
               <h2 className="font-display tracking-wide-2 uppercase text-3xl sm:text-4xl lg:text-5xl font-bold mb-6 leading-tight">
                 Välkommen in
               </h2>
-              <p className="text-white/70 text-base sm:text-lg mb-8 leading-relaxed">
-                Kom förbi för en kopp kaffe och se salongen.
-              </p>
 
               <div className="space-y-5">
                 <ContactItem icon={MapPin} label="Adress" value={SHOP.address} />
@@ -403,7 +407,7 @@ export function LandingPage({ onBook, onLogin }: LandingPageProps) {
 
       {/* =================== FOOTER =================== */}
       <footer className="py-6 sm:py-8 bg-barber-black border-t border-white/10 text-white/40 text-sm text-center">
-        © {new Date().getFullYear()} {SHOP.name} · Kungälv
+        © {new Date().getFullYear()} {SHOP.name} · {SHOP.city}
       </footer>
     </div>
   );
