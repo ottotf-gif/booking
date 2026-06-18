@@ -3,7 +3,6 @@ import { Calendar, Clock, User, ArrowRight, Check, LogIn, CheckCircle, ChevronLe
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { GuestBookingFlow, type GuestInfo } from './GuestBookingFlow';
-import { MustacheIcon } from '../common/MustacheIcon';
 import type { Database } from '../../lib/database.types';
 
 type Service = Database['public']['Tables']['services']['Row'];
@@ -138,10 +137,6 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
         }
       });
 
-      // ============================================================
-      // FIX: Get ALL existing appointments (full minute ranges)
-      // A barber can only have ONE booking per quarter-hour.
-      // ============================================================
       const { data: existingAppointments } = await supabase
         .from('appointments')
         .select('start_time, end_time')
@@ -173,19 +168,10 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
         const slotStart = m;
         const serviceEnd = m + selectedService.duration_minutes;
 
-        // Must fit inside ONE working range (excludes lunch gaps)
         const insideRange = workingRanges.some(r => slotStart >= r.start && serviceEnd <= r.end);
-
         const isBlocked = blockedTimes.has(time);
-
-        // CRITICAL: The slot is taken if the QUARTER itself falls inside any existing booking.
-        // This is the bug fix: a slot at 09:15 must be blocked if a booking exists 09:00-09:30.
         const slotTaken = bookedRanges.some(r => slotStart >= r.start && slotStart < r.end);
-
-        // Also: the full duration of the chosen service must not overlap any booking.
-        // (Otherwise a 09:00 slot for a 60-min service collides with an existing 09:30-10:00 booking.)
         const serviceConflict = bookedRanges.some(r => slotStart < r.end && serviceEnd > r.start);
-
         const tooSoon = slotStart < minStartMinutes;
 
         slots.push({
@@ -220,7 +206,6 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
       endTime.setMinutes(endTime.getMinutes() + selectedService.duration_minutes);
       const endTimeStr = `${endTime.getHours().toString().padStart(2, '0')}:${endTime.getMinutes().toString().padStart(2, '0')}`;
 
-      // Re-verify before insert (race condition guard)
       const { data: existingAppointments } = await supabase
         .from('appointments')
         .select('start_time, end_time')
@@ -296,8 +281,8 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
 
   if (loading) {
     return (
-      <div className={isGuestMode ? 'min-h-screen bg-slate-50 flex items-center justify-center px-4' : 'flex items-center justify-center h-64'}>
-        <div className="text-slate-600">Laddar...</div>
+      <div className={isGuestMode ? 'min-h-screen bg-white flex items-center justify-center px-4' : 'flex items-center justify-center h-64'}>
+        <div className="text-barber-stone">Laddar...</div>
       </div>
     );
   }
@@ -312,24 +297,26 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
   }
 
   const content = (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-4xl mx-auto font-sans">
       <div className="flex items-start justify-between mb-5 sm:mb-6 gap-3">
         <div className="min-w-0">
           {onBackToLanding && (
             <button
               onClick={onBackToLanding}
-              className="flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900 mb-2 -ml-1"
+              className="flex items-center gap-1 text-sm text-barber-stone hover:text-barber-black mb-2 -ml-1"
             >
               <ChevronLeft className="w-4 h-4" /> Tillbaka
             </button>
           )}
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-1">Boka tid</h1>
-          <p className="text-slate-600 text-sm sm:text-base">Välj tjänst, barber och tid</p>
+          <h1 className="font-display tracking-wide-2 uppercase text-2xl sm:text-3xl font-bold text-barber-black mb-1">
+            Boka tid
+          </h1>
+          <p className="text-barber-stone text-sm sm:text-base">Välj tjänst, barber och tid</p>
         </div>
         {!user && onShowAuth && (
           <button
             onClick={onShowAuth}
-            className="flex items-center gap-2 px-3 py-2 text-sm border border-slate-300 bg-white rounded-lg hover:bg-slate-50 flex-shrink-0"
+            className="flex items-center gap-2 px-3 py-2 text-sm border border-barber-line bg-white rounded-sm hover:bg-slate-50 flex-shrink-0"
           >
             <LogIn className="w-4 h-4" />
             <span className="hidden sm:inline">Logga in</span>
@@ -346,13 +333,13 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
             { id: 'confirm', label: 'Klart', done: false },
           ].map((s, i, arr) => (
             <div key={s.id} className="flex items-center gap-1 sm:gap-2">
-              <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm font-medium ${
-                step === s.id ? 'bg-slate-900 text-white' : s.done ? 'bg-slate-700 text-white' : 'bg-slate-200 text-slate-600'
+              <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm font-medium transition-colors ${
+                step === s.id ? 'bg-barber-red text-white' : s.done ? 'bg-barber-black text-white' : 'bg-barber-line text-barber-stone'
               }`}>
                 {s.done && step !== s.id ? <Check className="w-4 h-4" /> : i + 1}
               </div>
-              <span className="font-medium text-slate-700 hidden sm:inline">{s.label}</span>
-              {i < arr.length - 1 && <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 text-slate-400 mx-0.5 sm:mx-1" />}
+              <span className="font-medium text-barber-ink hidden sm:inline">{s.label}</span>
+              {i < arr.length - 1 && <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 text-barber-line mx-0.5 sm:mx-1" />}
             </div>
           ))}
         </div>
@@ -360,24 +347,28 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
 
       {step === 'service' && (
         <div>
-          <h2 className="text-lg sm:text-xl font-semibold text-slate-900 mb-4">Välj tjänst</h2>
+          <h2 className="font-display tracking-wide-2 uppercase text-lg sm:text-xl font-semibold text-barber-black mb-4">
+            Välj tjänst
+          </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
             {services.map((service) => (
               <button
                 key={service.id}
                 onClick={() => { setSelectedService(service); setStep('stylist'); }}
-                className="bg-white border-2 border-slate-200 rounded-lg p-4 sm:p-5 text-left hover:border-slate-900 hover:shadow-sm transition-all"
+                className="bg-white border-2 border-barber-line rounded-sm p-4 sm:p-5 text-left hover:border-barber-red hover:shadow-md transition-all"
               >
-                <h3 className="text-base sm:text-lg font-semibold text-slate-900 mb-1">{service.name}</h3>
+                <h3 className="font-display tracking-wide-2 uppercase text-base sm:text-lg font-semibold text-barber-black mb-1">
+                  {service.name}
+                </h3>
                 {service.description && (
-                  <p className="text-slate-600 text-sm mb-3 line-clamp-2">{service.description}</p>
+                  <p className="text-barber-stone text-sm mb-3 line-clamp-2">{service.description}</p>
                 )}
                 <div className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-1 text-slate-600">
+                  <div className="flex items-center gap-1 text-barber-stone">
                     <Clock className="w-4 h-4" />
                     <span>{service.duration_minutes} min</span>
                   </div>
-                  <div className="text-slate-900 font-semibold">{service.base_price} kr</div>
+                  <div className="font-display text-barber-black font-bold text-lg">{service.base_price} kr</div>
                 </div>
               </button>
             ))}
@@ -387,26 +378,25 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
 
       {step === 'stylist' && (
         <div>
-          <h2 className="text-lg sm:text-xl font-semibold text-slate-900 mb-4">Välj barber</h2>
+          <h2 className="font-display tracking-wide-2 uppercase text-lg sm:text-xl font-semibold text-barber-black mb-4">
+            Välj barber
+          </h2>
 
           {error && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-sm p-4 mb-4">
               <p className="text-amber-800 text-sm">{error}</p>
             </div>
           )}
 
           {loadingStylists ? (
-            <div className="bg-white rounded-lg border border-slate-200 p-12 text-center">
-              <div className="animate-pulse flex flex-col items-center">
-                <User className="w-16 h-16 text-slate-400 mb-4" />
-                <p className="text-slate-600">Laddar barbers...</p>
-              </div>
+            <div className="bg-white rounded-sm border border-barber-line p-12 text-center">
+              <p className="text-barber-stone">Laddar barbers...</p>
             </div>
           ) : stylists.length === 0 ? (
-            <div className="bg-white rounded-lg border border-slate-200 p-12 text-center">
-              <User className="w-16 h-16 text-slate-400 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">Inga barbers tillgängliga</h3>
-              <p className="text-slate-600">Kontakta salongen för hjälp.</p>
+            <div className="bg-white rounded-sm border border-barber-line p-12 text-center">
+              <User className="w-16 h-16 text-barber-line mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-barber-black mb-2">Inga barbers tillgängliga</h3>
+              <p className="text-barber-stone">Kontakta salongen för hjälp.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
@@ -414,7 +404,7 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
                 <button
                   key={stylist.id}
                   onClick={() => { setSelectedStylist(stylist); setStep('datetime'); }}
-                  className="bg-white border-2 border-slate-200 rounded-lg p-4 sm:p-5 text-left hover:border-slate-900 hover:shadow-sm transition-all"
+                  className="bg-white border-2 border-barber-line rounded-sm p-4 sm:p-5 text-left hover:border-barber-red hover:shadow-md transition-all"
                 >
                   <div className="flex items-center gap-3 mb-2">
                     {stylist.profile.avatar_url ? (
@@ -424,23 +414,23 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
                         className="w-12 h-12 rounded-full object-cover flex-shrink-0"
                       />
                     ) : (
-                      <div className="w-12 h-12 bg-slate-900 rounded-full flex items-center justify-center flex-shrink-0">
+                      <div className="w-12 h-12 bg-barber-black rounded-full flex items-center justify-center flex-shrink-0">
                         <User className="w-6 h-6 text-white" />
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-base sm:text-lg font-semibold text-slate-900 truncate">
+                      <h3 className="font-display tracking-wide-2 uppercase text-base sm:text-lg font-semibold text-barber-black truncate">
                         {stylist.profile.full_name}
                       </h3>
                       {stylist.specializations.length > 0 && (
-                        <p className="text-xs sm:text-sm text-slate-600 truncate">
-                          {stylist.specializations.join(', ')}
+                        <p className="text-xs text-barber-red uppercase tracking-wider font-semibold truncate">
+                          {stylist.specializations.join(' · ')}
                         </p>
                       )}
                     </div>
                   </div>
                   {stylist.bio && (
-                    <p className="text-slate-600 text-sm line-clamp-2">{stylist.bio}</p>
+                    <p className="text-barber-stone text-sm line-clamp-2">{stylist.bio}</p>
                   )}
                 </button>
               ))}
@@ -449,7 +439,7 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
 
           <button
             onClick={() => setStep('service')}
-            className="mt-4 sm:mt-6 flex items-center gap-1 px-2 py-2 text-slate-700 hover:text-slate-900 font-medium text-sm -ml-2"
+            className="mt-4 sm:mt-6 flex items-center gap-1 px-2 py-2 text-barber-stone hover:text-barber-black font-medium text-sm -ml-2"
           >
             <ChevronLeft className="w-4 h-4" /> Tillbaka
           </button>
@@ -458,39 +448,41 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
 
       {step === 'datetime' && (
         <div>
-          <h2 className="text-lg sm:text-xl font-semibold text-slate-900 mb-4">Välj datum och tid</h2>
+          <h2 className="font-display tracking-wide-2 uppercase text-lg sm:text-xl font-semibold text-barber-black mb-4">
+            Välj datum och tid
+          </h2>
 
           {bookingError && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+            <div className="bg-red-50 border border-red-200 rounded-sm p-4 mb-4">
               <p className="text-red-800 text-sm">{bookingError}</p>
             </div>
           )}
 
-          <div className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6 mb-4">
-            <label className="block text-sm font-medium text-slate-700 mb-2">Datum</label>
+          <div className="bg-white rounded-sm border border-barber-line p-4 sm:p-6 mb-4">
+            <label className="block text-sm font-medium text-barber-ink mb-2">Datum</label>
             <input
               type="date"
               value={selectedDate}
               onChange={(e) => { setSelectedDate(e.target.value); setSelectedTime(''); }}
               min={minDateStr}
               max={maxDateStr}
-              className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent text-base"
+              className="w-full px-4 py-2.5 border border-barber-line rounded-sm focus:ring-2 focus:ring-barber-red focus:border-transparent text-base"
             />
           </div>
 
           {selectedDate && (
-            <div className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6">
-              <h3 className="text-sm font-medium text-slate-700 mb-3">Lediga tider</h3>
+            <div className="bg-white rounded-sm border border-barber-line p-4 sm:p-6">
+              <h3 className="text-sm font-medium text-barber-ink mb-3">Lediga tider</h3>
               {loadingSlots ? (
-                <p className="text-slate-600 text-sm py-4 text-center">Laddar lediga tider...</p>
+                <p className="text-barber-stone text-sm py-4 text-center">Laddar lediga tider...</p>
               ) : availableSlots.length === 0 ? (
                 <div className="text-center py-6">
-                  <p className="text-slate-600 text-sm">Barbern jobbar inte denna dag, eller är ledig.</p>
-                  <p className="text-slate-500 text-xs mt-1">Välj ett annat datum.</p>
+                  <p className="text-barber-stone text-sm">Barbern jobbar inte denna dag, eller är ledig.</p>
+                  <p className="text-barber-stone text-xs mt-1">Välj ett annat datum.</p>
                 </div>
               ) : availableSlots.every(s => !s.available) ? (
                 <div className="text-center py-6">
-                  <p className="text-slate-600 text-sm">Alla tider är fullbokade denna dag.</p>
+                  <p className="text-barber-stone text-sm">Alla tider är fullbokade denna dag.</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
@@ -499,9 +491,9 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
                       key={slot.time}
                       onClick={() => { if (slot.available) { setSelectedTime(slot.time); setStep('confirm'); } }}
                       disabled={!slot.available}
-                      className={`px-2 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                      className={`px-2 py-2.5 rounded-sm text-sm font-medium transition-colors ${
                         slot.available
-                          ? 'bg-slate-100 hover:bg-slate-900 hover:text-white text-slate-900'
+                          ? 'bg-slate-100 hover:bg-barber-red hover:text-white text-barber-black'
                           : 'bg-slate-50 text-slate-300 cursor-not-allowed line-through'
                       }`}
                     >
@@ -515,7 +507,7 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
 
           <button
             onClick={() => setStep('stylist')}
-            className="mt-4 flex items-center gap-1 px-2 py-2 text-slate-700 hover:text-slate-900 font-medium text-sm -ml-2"
+            className="mt-4 flex items-center gap-1 px-2 py-2 text-barber-stone hover:text-barber-black font-medium text-sm -ml-2"
           >
             <ChevronLeft className="w-4 h-4" /> Tillbaka
           </button>
@@ -524,15 +516,17 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
 
       {step === 'confirm' && selectedService && selectedStylist && (
         <div>
-          <h2 className="text-lg sm:text-xl font-semibold text-slate-900 mb-4">Bekräfta bokning</h2>
+          <h2 className="font-display tracking-wide-2 uppercase text-lg sm:text-xl font-semibold text-barber-black mb-4">
+            Bekräfta bokning
+          </h2>
 
           {bookingError && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+            <div className="bg-red-50 border border-red-200 rounded-sm p-4 mb-4">
               <p className="text-red-800 text-sm">{bookingError}</p>
             </div>
           )}
 
-          <div className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6 mb-4 space-y-3">
+          <div className="bg-white rounded-sm border border-barber-line p-4 sm:p-6 mb-4 space-y-3">
             <Row label="Tjänst" value={selectedService.name} />
             <Row label="Barber" value={selectedStylist.profile.full_name} />
             <Row
@@ -540,23 +534,23 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
               value={`${new Date(selectedDate + 'T00:00:00').toLocaleDateString('sv-SE', { weekday: 'long', day: 'numeric', month: 'long' })} kl. ${selectedTime}`}
             />
             <Row label="Längd" value={`${selectedService.duration_minutes} minuter`} />
-            <div className="pt-3 border-t border-slate-200">
-              <span className="text-sm text-slate-600">Totalt</span>
-              <p className="text-xl sm:text-2xl font-bold text-slate-900">{selectedService.base_price} kr</p>
+            <div className="pt-3 border-t border-barber-line">
+              <span className="text-sm text-barber-stone">Totalt</span>
+              <p className="font-display text-2xl sm:text-3xl font-bold text-barber-black">{selectedService.base_price} kr</p>
             </div>
           </div>
 
           <div className="flex gap-3">
             <button
               onClick={() => setStep('datetime')}
-              className="flex-1 px-4 py-3 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 font-medium"
+              className="flex-1 px-4 py-3 border border-barber-line text-barber-ink rounded-sm hover:bg-slate-50 font-medium"
             >
               Tillbaka
             </button>
             <button
               onClick={handleBooking}
               disabled={booking}
-              className="flex-1 px-4 py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50 font-medium"
+              className="font-display tracking-wide-2 uppercase flex-1 px-4 py-3 bg-barber-red text-white rounded-sm hover:bg-barber-red-hov disabled:opacity-50 font-semibold"
             >
               {booking ? 'Bokar...' : !user && !guestInfo ? 'Fortsätt' : 'Bekräfta'}
             </button>
@@ -566,23 +560,25 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
 
       {step === 'booked' && confirmedBooking && (
         <div className="max-w-lg mx-auto text-center py-6 sm:py-8">
-          <div className="w-16 h-16 sm:w-20 sm:h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <CheckCircle className="w-8 h-8 sm:w-10 sm:h-10 text-green-600" />
+          <div className="w-16 h-16 sm:w-20 sm:h-20 bg-barber-red/10 rounded-full flex items-center justify-center mx-auto mb-6">
+            <CheckCircle className="w-8 h-8 sm:w-10 sm:h-10 text-barber-red" />
           </div>
-          <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">Bokningen är bekräftad!</h2>
-          <p className="text-slate-600 mb-8 text-sm sm:text-base">Vi ses snart.</p>
+          <h2 className="font-display tracking-wide-2 uppercase text-2xl sm:text-3xl font-bold text-barber-black mb-2">
+            Bokningen är bekräftad
+          </h2>
+          <p className="text-barber-stone mb-8 text-sm sm:text-base">Vi ses snart.</p>
 
-          <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 text-left mb-6 space-y-3">
-            <IconRow icon={MustacheIcon} label="Tjänst" value={confirmedBooking.service.name} />
+          <div className="bg-white rounded-sm border border-barber-line p-4 sm:p-6 text-left mb-6 space-y-3">
             <IconRow icon={User} label="Barber" value={confirmedBooking.stylist.profile.full_name} />
+            <IconRow icon={Clock} label="Tjänst" value={confirmedBooking.service.name} />
             <IconRow
               icon={Calendar}
               label="Datum & tid"
               value={`${new Date(confirmedBooking.date + 'T00:00:00').toLocaleDateString('sv-SE', { weekday: 'long', day: 'numeric', month: 'long' })} kl. ${confirmedBooking.time}`}
             />
-            <div className="pt-3 border-t border-slate-100">
-              <p className="text-xs text-slate-500">Totalt</p>
-              <p className="text-lg font-bold text-slate-900">{confirmedBooking.service.base_price} kr</p>
+            <div className="pt-3 border-t border-barber-line">
+              <p className="text-xs text-barber-stone">Totalt</p>
+              <p className="font-display text-xl font-bold text-barber-black">{confirmedBooking.service.base_price} kr</p>
             </div>
           </div>
 
@@ -591,7 +587,7 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
               setStep('service'); setSelectedService(null); setSelectedStylist(null);
               setSelectedDate(''); setSelectedTime(''); setConfirmedBooking(null);
             }}
-            className="px-6 py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 font-medium"
+            className="font-display tracking-wide-2 uppercase px-6 py-3 bg-barber-black text-white rounded-sm hover:bg-barber-ink font-semibold"
           >
             Boka en till
           </button>
@@ -602,7 +598,7 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
 
   if (isGuestMode) {
     return (
-      <div className="min-h-screen bg-slate-50">
+      <div className="min-h-screen bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
           {content}
         </div>
@@ -616,8 +612,8 @@ export function BookingView({ onShowAuth, onBackToLanding }: BookingViewProps) {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <span className="text-xs sm:text-sm text-slate-600">{label}</span>
-      <p className="text-base sm:text-lg font-semibold text-slate-900">{value}</p>
+      <span className="text-xs sm:text-sm text-barber-stone uppercase tracking-wide-2">{label}</span>
+      <p className="text-base sm:text-lg font-semibold text-barber-black">{value}</p>
     </div>
   );
 }
@@ -625,12 +621,12 @@ function Row({ label, value }: { label: string; value: string }) {
 function IconRow({ icon: Icon, label, value }: { icon: any; label: string; value: string }) {
   return (
     <div className="flex items-start gap-3">
-      <div className="w-9 h-9 bg-slate-100 rounded-lg flex items-center justify-center flex-shrink-0">
-        <Icon className="w-5 h-5 text-slate-700" />
+      <div className="w-9 h-9 bg-barber-red/10 rounded-sm flex items-center justify-center flex-shrink-0">
+        <Icon className="w-5 h-5 text-barber-red" />
       </div>
       <div className="min-w-0">
-        <p className="text-xs text-slate-500">{label}</p>
-        <p className="font-semibold text-slate-900">{value}</p>
+        <p className="text-xs text-barber-stone uppercase tracking-wide-2">{label}</p>
+        <p className="font-semibold text-barber-black">{value}</p>
       </div>
     </div>
   );
