@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Calendar, Users, LogOut, Menu, X, User, ClipboardList, Phone, LayoutDashboard, Wrench } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { MustacheIcon } from '../common/MustacheIcon';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -57,8 +56,8 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
+    <div className="min-h-screen bg-slate-50 font-sans">
+      <header className="bg-white border-b border-barber-line sticky top-0 z-50 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <button
@@ -68,16 +67,23 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
                   : 'book';
                 onNavigate(home);
               }}
-              className="flex items-center gap-2 sm:gap-3 hover:opacity-80 transition-opacity min-w-0"
+              className="flex items-center gap-3 hover:opacity-80 transition-opacity min-w-0"
             >
-              <div className="bg-slate-900 p-2 rounded-lg flex-shrink-0">
-                <MustacheIcon className="w-5 h-5 text-white" />
-              </div>
+              <div className="bg-barber-red w-1 h-9 rounded-sm flex-shrink-0" />
               <div className="hidden sm:block min-w-0">
-                <p className="text-base font-bold text-slate-900 leading-tight truncate">Nordic Barber</p>
+                <p className="font-display tracking-wide-2 uppercase text-sm font-bold text-barber-black leading-none truncate">
+                  City Barbershop
+                </p>
                 {profile && (
-                  <p className="text-xs text-slate-500 leading-tight">{roleLabel()}</p>
+                  <p className="text-[10px] text-barber-stone tracking-wide-3 uppercase leading-tight mt-0.5">
+                    {roleLabel()}
+                  </p>
                 )}
+              </div>
+              <div className="sm:hidden">
+                <p className="font-display tracking-wide-2 uppercase text-sm font-bold text-barber-black leading-none">
+                  CITY
+                </p>
               </div>
             </button>
 
@@ -89,10 +95,10 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
                   <button
                     key={item.id}
                     onClick={() => onNavigate(item.id)}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-150 ${
                       isActive
-                        ? 'bg-slate-900 text-white shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                        ? 'bg-barber-black text-white shadow-sm'
+                        : 'text-barber-stone hover:text-barber-black hover:bg-slate-100'
                     }`}
                   >
                     <Icon className="w-4 h-4 flex-shrink-0" />
@@ -100,10 +106,10 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
                   </button>
                 );
               })}
-              <div className="w-px h-6 bg-slate-200 mx-1" />
+              <div className="w-px h-6 bg-barber-line mx-1" />
               <button
                 onClick={handleSignOut}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+                className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-barber-stone hover:text-barber-black hover:bg-slate-100"
               >
                 <LogOut className="w-4 h-4" />
                 <span>Logga ut</span>
@@ -119,22 +125,22 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
                     key={item.id}
                     onClick={() => onNavigate(item.id)}
                     title={item.label}
-                    className={`p-2 rounded-lg transition-colors ${
-                      isActive ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
+                    className={`p-2 rounded-md transition-colors ${
+                      isActive ? 'bg-barber-black text-white' : 'text-barber-stone hover:bg-slate-100'
                     }`}
                   >
                     <Icon className="w-5 h-5" />
                   </button>
                 );
               })}
-              <button onClick={handleSignOut} title="Logga ut" className="p-2 rounded-lg text-slate-500 hover:bg-slate-100">
+              <button onClick={handleSignOut} title="Logga ut" className="p-2 rounded-md text-barber-stone hover:bg-slate-100">
                 <LogOut className="w-5 h-5" />
               </button>
             </nav>
 
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100"
+              className="md:hidden p-2 rounded-md text-barber-stone hover:bg-slate-100"
               aria-label="Meny"
             >
               {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -143,7 +149,7 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
         </div>
 
         {mobileMenuOpen && (
-          <div className="md:hidden border-t border-slate-100 bg-white">
+          <div className="md:hidden border-t border-barber-line bg-white">
             <div className="px-3 py-2 space-y-0.5">
               {visibleItems.map((item) => {
                 const Icon = item.icon;
@@ -152,8 +158,8 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
                   <button
                     key={item.id}
                     onClick={() => { onNavigate(item.id); setMobileMenuOpen(false); }}
-                    className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium ${
-                      isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
+                    className={`w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm font-medium ${
+                      isActive ? 'bg-barber-black text-white' : 'text-barber-ink hover:bg-slate-100'
                     }`}
                   >
                     <Icon className="w-4 h-4 flex-shrink-0" />
@@ -161,10 +167,10 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
                   </button>
                 );
               })}
-              <div className="pt-2 mt-2 border-t border-slate-100">
+              <div className="pt-2 mt-2 border-t border-barber-line">
                 <button
                   onClick={() => { handleSignOut(); setMobileMenuOpen(false); }}
-                  className="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium text-slate-500 hover:bg-slate-100"
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm font-medium text-barber-stone hover:bg-slate-100"
                 >
                   <LogOut className="w-4 h-4" />
                   Logga ut
