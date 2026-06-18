@@ -7,6 +7,8 @@ interface TimeOff {
   stylist_id: string;
   start_date: string;
   end_date: string;
+  start_time: string | null;
+  end_time: string | null;
   reason: string | null;
 }
 
@@ -19,8 +21,13 @@ export function TimeOffManager({ stylistId }: TimeOffManagerProps) {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [showForm, setShowForm] = useState(false);
+
+  // Form state
+  const [partialDay, setPartialDay] = useState(false);
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
+  const [startTime, setStartTime] = useState('12:00');
+  const [endTime, setEndTime] = useState('14:00');
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
 
@@ -45,24 +52,45 @@ export function TimeOffManager({ stylistId }: TimeOffManagerProps) {
     }
   };
 
+  const resetForm = () => {
+    setPartialDay(false);
+    setStart(''); setEnd(''); setStartTime('12:00'); setEndTime('14:00'); setReason('');
+    setShowForm(false);
+    setError('');
+  };
+
   const add = async () => {
     setError('');
-    if (!start || !end) { setError('Välj start- och slutdatum.'); return; }
-    if (start > end) { setError('Startdatum måste vara före slutdatum.'); return; }
+    if (!start) { setError('Välj minst ett datum.'); return; }
+
+    const effectiveEnd = partialDay ? start : (end || start);
+
+    if (!partialDay && end && start > end) {
+      setError('Startdatum måste vara före slutdatum.');
+      return;
+    }
+    if (partialDay && startTime >= endTime) {
+      setError('Starttiden måste vara före sluttiden.');
+      return;
+    }
 
     setAdding(true);
     try {
-      const { error } = await supabase
-        .from('stylist_time_off')
-        .insert({
-          stylist_id: stylistId,
-          start_date: start,
-          end_date: end,
-          reason: reason || null,
-          approved: true,
-        });
+      const payload: any = {
+        stylist_id: stylistId,
+        start_date: start,
+        end_date: effectiveEnd,
+        reason: reason || null,
+        approved: true,
+      };
+      if (partialDay) {
+        payload.start_time = startTime;
+        payload.end_time = endTime;
+      }
+
+      const { error } = await supabase.from('stylist_time_off').insert(payload);
       if (error) throw error;
-      setStart(''); setEnd(''); setReason(''); setShowForm(false);
+      resetForm();
       await load();
     } catch (e: any) {
       setError(e.message || 'Kunde inte spara ledighet');
@@ -82,13 +110,25 @@ export function TimeOffManager({ stylistId }: TimeOffManagerProps) {
     }
   };
 
+  const formatItem = (item: TimeOff) => {
+    const sameDay = item.start_date === item.end_date;
+    const dateStr = sameDay
+      ? new Date(item.start_date).toLocaleDateString('sv-SE')
+      : `${new Date(item.start_date).toLocaleDateString('sv-SE')} – ${new Date(item.end_date).toLocaleDateString('sv-SE')}`;
+
+    if (item.start_time && item.end_time && sameDay) {
+      return `${dateStr} kl. ${item.start_time.substring(0,5)}–${item.end_time.substring(0,5)}`;
+    }
+    return dateStr;
+  };
+
   const todayStr = new Date().toISOString().split('T')[0];
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h4 className="font-medium text-slate-900 flex items-center gap-2">
-          <CalendarX className="w-4 h-4" /> Lediga dagar
+          <CalendarX className="w-4 h-4" /> Lediga dagar / tider
         </h4>
         {!showForm && (
           <button
@@ -102,41 +142,101 @@ export function TimeOffManager({ stylistId }: TimeOffManagerProps) {
       </div>
 
       {showForm && (
-        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
+        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-3">
           {error && <p className="text-red-600 text-xs">{error}</p>}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Från</label>
-              <input
-                type="date"
-                value={start}
-                min={todayStr}
-                onChange={e => setStart(e.target.value)}
-                className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Till</label>
-              <input
-                type="date"
-                value={end}
-                min={start || todayStr}
-                onChange={e => setEnd(e.target.value)}
-                className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-              />
-            </div>
+
+          {/* Mode toggle */}
+          <div className="flex gap-1 bg-white border border-slate-200 rounded-md p-0.5">
+            <button
+              type="button"
+              onClick={() => setPartialDay(false)}
+              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                !partialDay ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              Hel dag / dagar
+            </button>
+            <button
+              type="button"
+              onClick={() => setPartialDay(true)}
+              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                partialDay ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              Tidsintervall en dag
+            </button>
           </div>
+
+          {!partialDay ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Från</label>
+                <input
+                  type="date"
+                  value={start}
+                  min={todayStr}
+                  onChange={e => setStart(e.target.value)}
+                  className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Till</label>
+                <input
+                  type="date"
+                  value={end}
+                  min={start || todayStr}
+                  onChange={e => setEnd(e.target.value)}
+                  className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Datum</label>
+                <input
+                  type="date"
+                  value={start}
+                  min={todayStr}
+                  onChange={e => setStart(e.target.value)}
+                  className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Från kl.</label>
+                  <input
+                    type="time"
+                    value={startTime}
+                    onChange={e => setStartTime(e.target.value)}
+                    className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Till kl.</label>
+                  <input
+                    type="time"
+                    value={endTime}
+                    onChange={e => setEndTime(e.target.value)}
+                    className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           <input
             type="text"
             value={reason}
             onChange={e => setReason(e.target.value)}
-            placeholder="Anledning (valfri)"
+            placeholder="Anledning (valfri) – t.ex. läkarbesök, semester"
             className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-900 focus:border-transparent"
           />
+
           <div className="flex gap-2 justify-end">
             <button
               type="button"
-              onClick={() => { setShowForm(false); setError(''); }}
+              onClick={resetForm}
               className="px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100 rounded-md"
             >
               Avbryt
@@ -162,11 +262,7 @@ export function TimeOffManager({ stylistId }: TimeOffManagerProps) {
           {items.map(item => (
             <li key={item.id} className="flex items-center justify-between bg-white border border-slate-200 rounded-md px-3 py-2 text-sm">
               <div>
-                <p className="font-medium text-slate-900">
-                  {item.start_date === item.end_date
-                    ? new Date(item.start_date).toLocaleDateString('sv-SE')
-                    : `${new Date(item.start_date).toLocaleDateString('sv-SE')} – ${new Date(item.end_date).toLocaleDateString('sv-SE')}`}
-                </p>
+                <p className="font-medium text-slate-900">{formatItem(item)}</p>
                 {item.reason && <p className="text-xs text-slate-500">{item.reason}</p>}
               </div>
               <button
