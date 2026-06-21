@@ -184,6 +184,21 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
         {children}
       </main>
+
+      <footer className="border-t border-barber-line mt-8 py-4">
+        <p className="text-center text-xs text-barber-stone">
+          Drivs av{' '}
+          <a
+            href="https://www.ottoniq.se"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-barber-black font-medium hover:underline"
+          >
+            ottoniq
+          </a>
+          .se
+        </p>
+      </footer>
     </div>
   );
 }
