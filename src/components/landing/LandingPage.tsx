@@ -406,8 +406,20 @@ export function LandingPage({ onBook, onLogin }: LandingPageProps) {
       </section>
 
       {/* =================== FOOTER =================== */}
-      <footer className="py-6 sm:py-8 bg-barber-black border-t border-white/10 text-white/40 text-sm text-center">
-        © {new Date().getFullYear()} {SHOP.name} · {SHOP.city}
+      <footer className="py-6 sm:py-8 bg-barber-black border-t border-white/10 text-white/40 text-sm text-center space-y-1">
+        <p>© {new Date().getFullYear()} {SHOP.name} · {SHOP.city}</p>
+        <p>
+          Drivs av{' '}
+          <a
+            href="https://www.ottoniq.se"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-white/60 hover:text-white transition-colors"
+          >
+            Ottoniq
+          </a>
+          .se
+        </p>
       </footer>
     </div>
   );
