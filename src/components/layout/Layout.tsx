@@ -69,7 +69,11 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
               }}
               className="flex items-center gap-3 hover:opacity-80 transition-opacity min-w-0"
             >
-              <div className="bg-barber-red w-1 h-9 rounded-sm flex-shrink-0" />
+              <img
+                src="https://scontent-arn2-1.xx.fbcdn.net/v/t39.30808-1/294642344_386821990221398_8229610546796604894_n.png?stp=dst-png&cstp=mx500x500&ctp=s480x480&_nc_cat=101&ccb=1-7&_nc_sid=2d3e12&_nc_ohc=YA9iFklCuMcQ7kNvwG3kT03&_nc_oc=AdqXjjsIGPjmydSYLlr_kx-osjAnSkhZGw6P96ewHowzzLvGlsEburOmgSwI_0f6miuse2L9roh8tw9buMKwz7Ke&_nc_zt=24&_nc_ht=scontent-arn2-1.xx&_nc_gid=SVH3wH-TFKvyM5TbvimBTA&_nc_ss=7b2a8&oh=00_Af8bbkYU-dlkOComYbH0CQPqsVsH_BMp3uAzr32Ax7qu1w&oe=6A40C4FC"
+                alt="City Barbershop"
+                className="h-10 w-10 rounded-full object-cover flex-shrink-0"
+              />
               <div className="hidden sm:block min-w-0">
                 <p className="font-display tracking-wide-2 uppercase text-sm font-bold text-barber-black leading-none truncate">
                   City Barbershop

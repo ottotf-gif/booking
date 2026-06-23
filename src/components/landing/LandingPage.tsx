@@ -19,7 +19,7 @@ interface LandingPageProps {
 const SHOP = {
   name: 'City Barbershop',
   city: 'Kungälv',
-  logo_url: 'https://scontent-arn2-1.xx.fbcdn.net/v/t39.30808-1/294642344_386821990221398_8229610546796604894_n.png?stp=dst-png&cstp=mx500x500&ctp=s480x480&_nc_cat=101&ccb=1-7&_nc_sid=2d3e12&_nc_ohc=FM4UCDRkgS0Q7kNvwHV02qE&_nc_oc=AdpOGJuXI5Gq4vTAOj_EnhHWB3obsibWSNIYHsWPLTje_OQSgh4UHYjssDRgBrAaalgHf65PoRA9JjlW0LEX7vM5&_nc_zt=24&_nc_ht=scontent-arn2-1.xx&_nc_gid=ioVJxcVyb1UMyRWdRvtF4A&_nc_ss=7b2a8&oh=00_Af8-Gubcx10L7kGF2Ct-IamBdb8Cgjva7U_0Tp_6VbzTeQ&oe=6A3A2D7C',
+  logo_url: 'https://scontent-arn2-1.xx.fbcdn.net/v/t39.30808-1/294642344_386821990221398_8229610546796604894_n.png?stp=dst-png&cstp=mx500x500&ctp=s480x480&_nc_cat=101&ccb=1-7&_nc_sid=2d3e12&_nc_ohc=YA9iFklCuMcQ7kNvwG3kT03&_nc_oc=AdqXjjsIGPjmydSYLlr_kx-osjAnSkhZGw6P96ewHowzzLvGlsEburOmgSwI_0f6miuse2L9roh8tw9buMKwz7Ke&_nc_zt=24&_nc_ht=scontent-arn2-1.xx&_nc_gid=SVH3wH-TFKvyM5TbvimBTA&_nc_ss=7b2a8&oh=00_Af8bbkYU-dlkOComYbH0CQPqsVsH_BMp3uAzr32Ax7qu1w&oe=6A40C4FC',
   hero_image: 'https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=2000&q=85',
   about_image: 'https://images.unsplash.com/photo-1622287162716-f311baa1a2b8?w=1200&q=85',
   about_title: 'Klippning, skägg och rakning – på vårt sätt.',
